@@ -1,6 +1,6 @@
 use crate::domain::{DbConfig, HistoryRow};
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use sha2::{Digest, Sha256};
 
 pub fn open_db(cfg: &DbConfig) -> Result<Connection> {
@@ -100,14 +100,16 @@ pub fn import_from_db(conn: &mut Connection, from_path: &std::path::Path) -> Res
     conn.execute_batch("BEGIN")?;
 
     // Ensure src.history exists; if not, fail with clearer message
-    let src_has_history: bool = src
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='history')",
-            [],
-            |r| r.get::<_, i64>(0),
-        )? == 1;
+    let src_has_history: bool = src.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='history')",
+        [],
+        |r| r.get::<_, i64>(0),
+    )? == 1;
     if !src_has_history {
-        anyhow::bail!("source db {} does not have a history table", from_path.display());
+        anyhow::bail!(
+            "source db {} does not have a history table",
+            from_path.display()
+        );
     }
 
     let mut considered: u64 = 0;
@@ -138,12 +140,11 @@ pub fn import_from_db(conn: &mut Connection, from_path: &std::path::Path) -> Res
             considered += 1;
             let hash = row_hash(&row);
 
-            let exists: bool = conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM history_hash WHERE hash=?1)",
-                    params![hash],
-                    |r| r.get::<_, i64>(0),
-                )? == 1;
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM history_hash WHERE hash=?1)",
+                params![hash],
+                |r| r.get::<_, i64>(0),
+            )? == 1;
 
             if exists {
                 continue;

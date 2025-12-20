@@ -2,6 +2,8 @@
 name = "sdbh"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/mgd43b/shelldbhist"
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0.100"
@@ -15,3 +17,8 @@ time = { version = "0.3.44", features = ["formatting", "macros"] }
 assert_cmd = "2.1.1"
 predicates = "3.1.3"
 tempfile = "3.23.0"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

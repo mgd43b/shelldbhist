@@ -406,8 +406,8 @@ fn cmd_import(mut cfg: DbConfig, args: ImportArgs) -> Result<()> {
 
 fn cmd_shell(args: ShellArgs) -> Result<()> {
     // Default: print both if neither specified
-    let want_bash = args.bash || (!args.bash && !args.zsh);
-    let want_zsh = args.zsh || (!args.bash && !args.zsh);
+    let want_bash = args.bash || !args.zsh;
+    let want_zsh = args.zsh || !args.bash;
 
     if args.intercept {
         if want_bash {

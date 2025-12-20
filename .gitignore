@@ -418,3 +418,6 @@ FodyWeavers.xsd
 *.msp
 
 memory-bank
+
+# Rust build artifacts
+/sdbh/target/
