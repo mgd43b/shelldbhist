@@ -422,3 +422,12 @@ memory-bank
 # Rust build artifacts
 /target/
 /sdbh/target/
+
+# Local databases (do not commit personal shell history)
+*.sqlite
+*.sqlite3
+.dbhist
+.sdbh.sqlite
+
+# macOS
+.DS_Store
