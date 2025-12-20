@@ -1,6 +1,6 @@
 use crate::domain::{DbConfig, HistoryRow};
 use anyhow::{Context, Result};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, params, types::Value};
 use sha2::{Digest, Sha256};
 
 pub fn open_db(cfg: &DbConfig) -> Result<Connection> {
@@ -114,6 +114,7 @@ pub fn import_from_db(conn: &mut Connection, from_path: &std::path::Path) -> Res
 
     let mut considered: u64 = 0;
     let mut inserted: u64 = 0;
+    let mut skipped_bad: u64 = 0;
 
     {
         let mut stmt = src.prepare(
@@ -125,19 +126,52 @@ pub fn import_from_db(conn: &mut Connection, from_path: &std::path::Path) -> Res
         )?;
 
         let rows = stmt.query_map([], |r| {
-            Ok(HistoryRow {
-                hist_id: r.get(0)?,
-                cmd: r.get(1)?,
-                epoch: r.get(2)?,
-                ppid: r.get(3)?,
-                pwd: r.get(4)?,
-                salt: r.get(5)?,
-            })
+            Ok((
+                r.get::<_, Value>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Value>(2)?,
+                r.get::<_, Value>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, Value>(5)?,
+            ))
         })?;
 
         for row in rows {
-            let row = row?;
+            let (hist_id_v, cmd, epoch_v, ppid_v, pwd, salt_v) = row?;
             considered += 1;
+
+            let hist_id = value_to_i64(&hist_id_v);
+            let epoch = match value_to_i64(&epoch_v) {
+                Some(v) => v,
+                None => {
+                    skipped_bad += 1;
+                    continue;
+                }
+            };
+            let ppid = match value_to_i64(&ppid_v) {
+                Some(v) => v,
+                None => {
+                    skipped_bad += 1;
+                    continue;
+                }
+            };
+            let salt = match value_to_i64(&salt_v) {
+                Some(v) => v,
+                None => {
+                    skipped_bad += 1;
+                    continue;
+                }
+            };
+
+            let row = HistoryRow {
+                hist_id,
+                cmd,
+                epoch,
+                ppid,
+                pwd,
+                salt,
+            };
+
             let hash = row_hash(&row);
 
             let exists: bool = conn.query_row(
@@ -168,5 +202,44 @@ pub fn import_from_db(conn: &mut Connection, from_path: &std::path::Path) -> Res
 
     conn.execute_batch("COMMIT")?;
 
+    if skipped_bad > 0 {
+        eprintln!(
+            "import skipped {} corrupted row(s) (non-integer hist_id/epoch/ppid/salt)",
+            skipped_bad
+        );
+    }
+
     Ok((considered, inserted))
+}
+
+fn value_to_i64(v: &Value) -> Option<i64> {
+    match v {
+        Value::Null => None,
+        Value::Integer(i) => Some(*i),
+        Value::Real(f) => {
+            // Try to coerce if it's actually an integer.
+            if f.fract() == 0.0 {
+                Some(*f as i64)
+            } else {
+                None
+            }
+        }
+        Value::Text(t) => {
+            let s = t.trim().to_string();
+            if s.is_empty() {
+                return None;
+            }
+            // Some corrupted values look like: "  970* 1571608128 ssh ..."
+            // Extract the first integer token.
+            // Prefer first integer-like token; if none, try the second token.
+            // This helps with cases like: "970* 1571608128 ssh ..." where epoch is token 2.
+            let mut it = s.split_whitespace();
+            let t1 = it.next().unwrap_or("");
+            let t2 = it.next().unwrap_or("");
+
+            let parse_token = |tok: &str| tok.trim_end_matches('*').parse::<i64>().ok();
+            parse_token(t1).or_else(|| parse_token(t2))
+        }
+        Value::Blob(_) => None,
+    }
 }

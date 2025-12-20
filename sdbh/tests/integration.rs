@@ -265,6 +265,82 @@ fn list_under_filters_by_pwd_prefix_and_escapes_wildcards() {
 }
 
 #[test]
+fn import_skips_corrupted_rows_with_text_in_numeric_columns() {
+    let tmp = TempDir::new().unwrap();
+    let src_db = tmp.path().join("src.sqlite");
+    let dst_db = tmp.path().join("dst.sqlite");
+
+    // Source DB with one good row and one corrupted row.
+    {
+        let c = conn(&src_db);
+        c.execute_batch(
+            r#"
+            CREATE TABLE history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              hist_id INTEGER,
+              cmd TEXT,
+              epoch INTEGER,
+              ppid INTEGER,
+              pwd TEXT,
+              salt INTEGER
+            );
+            "#,
+        )
+        .unwrap();
+
+        // Good row
+        c.execute(
+            "INSERT INTO history(hist_id, cmd, epoch, ppid, pwd, salt) VALUES (?,?,?,?,?,?)",
+            (1i64, "echo good", 1700000000i64, 10i64, "/tmp", 99i64),
+        )
+        .unwrap();
+
+        // Corrupted row: epoch column contains text
+        c.execute(
+            "INSERT INTO history(hist_id, cmd, epoch, ppid, pwd, salt) VALUES (?,?,?,?,?,?)",
+            (
+                "  970* 1571608128 ssh ubnt@192.168.2.1 ",
+                "bad",
+                "",
+                10i64,
+                "/tmp",
+                99i64,
+            ),
+        )
+        .unwrap();
+    }
+
+    Command::cargo_bin("sdbh")
+        .unwrap()
+        .args([
+            "--db",
+            dst_db.to_string_lossy().as_ref(),
+            "import",
+            "--from",
+            src_db.to_string_lossy().as_ref(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("skipped 1 corrupted"));
+
+    // Destination should contain the good row
+    Command::cargo_bin("sdbh")
+        .unwrap()
+        .args([
+            "--db",
+            dst_db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("echo good"))
+        .stdout(predicate::str::contains("bad").not());
+}
+
+#[test]
 fn import_errors_when_history_table_missing() {
     let tmp = TempDir::new().unwrap();
     let src_db = tmp.path().join("src.sqlite");
