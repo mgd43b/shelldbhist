@@ -200,15 +200,6 @@ fn summary_groups_and_counts() {
 
 #[test]
 fn list_under_filters_by_pwd_prefix_and_escapes_wildcards() {
-    // Disabled: brittle across test runners because `sdbh` derives the `--under`
-    // filter from its own process cwd.
-    // TODO: replace with a dedicated e2e harness that controls cwd reliably.
-    //
-    // (We keep LIKE escaping covered via unit tests of escape_like.)
-    return;
-}
-
-/*
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("test.sqlite");
 
@@ -253,30 +244,25 @@ fn list_under_filters_by_pwd_prefix_and_escapes_wildcards() {
         .assert()
         .success();
 
-    // Run from /tmp/proj_% and filter --under; should only match the first row.
-    // We create the directory so current_dir works reliably.
-    std::fs::create_dir_all("/tmp/proj_%").unwrap();
-
-    // Ensure our current process really runs from that directory so sdbh's
-    // current_dir() sees it.
-    std::env::set_current_dir("/tmp/proj_%").unwrap();
-
-    let mut cmd = Command::cargo_bin("sdbh").unwrap();
-    cmd.args([
-        "--db",
-        db.to_string_lossy().as_ref(),
-        "list",
-        "--all",
-        "--under",
-        "--limit",
-        "50",
-    ]);
-    cmd.assert()
+    // Use the new --pwd-override to make this test deterministic
+    Command::cargo_bin("sdbh")
+        .unwrap()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--under",
+            "--pwd-override",
+            "/tmp/proj_%",
+            "--limit",
+            "50",
+        ])
+        .assert()
         .success()
         .stdout(predicate::str::contains("echo a"))
         .stdout(predicate::str::contains("echo b").not());
 }
-*/
 
 #[test]
 fn import_errors_when_history_table_missing() {

@@ -71,6 +71,10 @@ pub struct SummaryArgs {
     #[arg(long)]
     pub pwd: bool,
 
+    /// Override the working directory used by --here/--under (useful for tests)
+    #[arg(long)]
+    pub pwd_override: Option<String>,
+
     #[arg(long, conflicts_with = "under")]
     pub here: bool,
 
@@ -112,6 +116,10 @@ pub struct ListArgs {
 
     #[arg(long)]
     pub all: bool,
+
+    /// Override the working directory used by --here/--under (useful for tests)
+    #[arg(long)]
+    pub pwd_override: Option<String>,
 
     #[arg(long, conflicts_with = "under")]
     pub here: bool,
@@ -188,11 +196,19 @@ fn session_filter(all: bool) -> Option<(i64, i64)> {
     }
 }
 
-fn location_filter(here: bool, under: bool) -> Option<(String, bool)> {
+fn location_filter(
+    here: bool,
+    under: bool,
+    pwd_override: &Option<String>,
+) -> Option<(String, bool)> {
     if !(here || under) {
         return None;
     }
-    let pwd = std::env::current_dir().ok()?.to_string_lossy().to_string();
+    let pwd = pwd_override.clone().or_else(|| {
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+    })?;
     Some((pwd, under))
 }
 
@@ -265,10 +281,12 @@ fn build_summary_sql(args: &SummaryArgs) -> Result<(String, Vec<String>)> {
         bind.push(escape_like(&like));
     }
 
-    if let Some((pwd, under)) = location_filter(args.here, args.under) {
+    if let Some((pwd, under)) = location_filter(args.here, args.under, &args.pwd_override) {
         if under {
             sql.push_str("AND pwd LIKE ? ESCAPE '\\' ");
-            bind.push(escape_like(&format!("{}%", pwd)));
+            // For an under-query, treat the override as a literal directory prefix.
+            // The suffix '%' is a wildcard and must NOT be escaped.
+            bind.push(format!("{}%", escape_like(&pwd)));
         } else {
             sql.push_str("AND pwd = ? ");
             bind.push(pwd);
@@ -351,10 +369,10 @@ fn build_list_sql(args: &ListArgs) -> Result<(String, Vec<String>)> {
         bind.push(escape_like(&format!("%{}%", q)));
     }
 
-    if let Some((pwd, under)) = location_filter(args.here, args.under) {
+    if let Some((pwd, under)) = location_filter(args.here, args.under, &args.pwd_override) {
         if under {
             sql.push_str("AND pwd LIKE ? ESCAPE '\\' ");
-            bind.push(escape_like(&format!("{}%", pwd)));
+            bind.push(format!("{}%", escape_like(&pwd)));
         } else {
             sql.push_str("AND pwd = ? ");
             bind.push(pwd);
@@ -586,6 +604,7 @@ mod tests {
             starts: false,
             all: true,
             pwd: false,
+            pwd_override: None,
             here: false,
             under: false,
             verbose: false,
