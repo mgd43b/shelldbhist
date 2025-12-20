@@ -420,4 +420,5 @@ FodyWeavers.xsd
 memory-bank
 
 # Rust build artifacts
+/target/
 /sdbh/target/
