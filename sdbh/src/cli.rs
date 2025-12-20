@@ -443,10 +443,20 @@ __sdbh_prompt() {
   line="$(history 1)"
 
   # Parse: <hist_id> <epoch> <cmd...>
+  # history output sometimes contains multiple spaces between fields, so trim
+  # spaces before splitting.
   local hist_id epoch cmd
-  hist_id="${line%% *}";
+
+  # trim leading spaces
+  line="${line#${line%%[! ]*}}"
+
+  hist_id="${line%% *}"
   line="${line#* }"
-  epoch="${line%% *}";
+
+  # trim leading spaces again (in case there were multiple spaces)
+  line="${line#${line%%[! ]*}}"
+
+  epoch="${line%% *}"
   cmd="${line#* }"
 
   [[ -z "${cmd}" ]] && return

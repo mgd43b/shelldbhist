@@ -7,6 +7,25 @@ fn conn(path: &std::path::Path) -> Connection {
     Connection::open(path).unwrap()
 }
 
+fn parse_bash_history_hook_fields(line: &str) -> Option<(String, String, String)> {
+    // Mirrors the bash snippet logic used in `sdbh shell --bash`.
+    // Trim leading spaces, then split by spaces, tolerating multiple spaces.
+    let line = line.trim_start_matches(' ');
+    let (hist_id, rest) = line.split_once(' ')?;
+    let rest = rest.trim_start_matches(' ');
+    let (epoch, cmd) = rest.split_once(' ')?;
+    Some((hist_id.to_string(), epoch.to_string(), cmd.to_string()))
+}
+
+#[test]
+fn bash_history_parsing_tolerates_multiple_spaces() {
+    let (hist_id, epoch, cmd) =
+        parse_bash_history_hook_fields("23070  1766267288 history 1").unwrap();
+    assert_eq!(hist_id, "23070");
+    assert_eq!(epoch, "1766267288");
+    assert_eq!(cmd, "history 1");
+}
+
 #[test]
 fn log_inserts_row_and_list_shows_it() {
     let tmp = TempDir::new().unwrap();
