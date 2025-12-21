@@ -1,0 +1,61 @@
+name: Version Sync Guard
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Extract tag version
+        id: tag
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # Expected: vX.Y.Z (possibly with prerelease/build suffix)
+          if [[ ! "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+.*)$ ]]; then
+            echo "Unexpected tag format: $TAG" >&2
+            exit 1
+          fi
+          VER="${BASH_REMATCH[1]}"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Read crate version (sdbh/Cargo.toml)
+        id: crate
+        shell: bash
+        run: |
+          VER=$(python3 -c "import re; from pathlib import Path; t=Path('sdbh/Cargo.toml').read_text('utf-8'); m=re.search(r'(?ms)^\\[package\\].*?^version\\s*=\\s*\\\"([^\\\"]+)\\\"', t); assert m, 'missing package.version'; print(m.group(1))")
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Read release-please manifest version
+        id: manifest
+        shell: bash
+        run: |
+          VER=$(python3 -c "import json; from pathlib import Path; m=json.loads(Path('.release-please-manifest.json').read_text('utf-8')); v=m.get('sdbh'); assert v, 'missing manifest key sdbh'; print(v)")
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Verify versions match tag
+        shell: bash
+        run: |
+          echo "tag=${{ steps.tag.outputs.version }}"
+          echo "crate=${{ steps.crate.outputs.version }}"
+          echo "manifest=${{ steps.manifest.outputs.version }}"
+
+          if [ "${{ steps.tag.outputs.version }}" != "${{ steps.crate.outputs.version }}" ]; then
+            echo "Tag version does not match sdbh/Cargo.toml package.version" >&2
+            exit 1
+          fi
+
+          if [ "${{ steps.tag.outputs.version }}" != "${{ steps.manifest.outputs.version }}" ]; then
+            echo "Tag version does not match .release-please-manifest.json[sdbh]" >&2
+            exit 1
+          fi
