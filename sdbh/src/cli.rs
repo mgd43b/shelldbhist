@@ -163,6 +163,14 @@ pub struct SearchArgs {
     #[arg(long)]
     pub all: bool,
 
+    /// Only include rows with epoch >= since_epoch.
+    #[arg(long, conflicts_with = "days")]
+    pub since_epoch: Option<i64>,
+
+    /// Only include rows within the last N days.
+    #[arg(long, conflicts_with = "since_epoch")]
+    pub days: Option<u32>,
+
     /// Override the working directory used by --here/--under (useful for tests)
     #[arg(long)]
     pub pwd_override: Option<String>,
@@ -713,6 +721,15 @@ fn build_search_sql(args: &SearchArgs) -> Result<(String, Vec<String>)> {
     let mut sql = String::from(
         "SELECT id, datetime(epoch, 'unixepoch', 'localtime') as dt, pwd, cmd, epoch FROM history WHERE 1=1 ",
     );
+
+    // Optional time filtering
+    if let Some(since) = args.since_epoch {
+        sql.push_str("AND epoch >= ? ");
+        bind.push(since.to_string());
+    } else if let Some(days) = args.days {
+        sql.push_str("AND epoch >= ? ");
+        bind.push(days_cutoff_epoch(days).to_string());
+    }
 
     // WORKAROUND: In some SQLite builds / PRAGMA settings, `COLLATE NOCASE` can behave
     // unexpectedly with LIKE. Instead we normalize both sides with lower(), which is

@@ -110,6 +110,10 @@ Substring search (case-insensitive):
 sdbh search kubectl --all --limit 50
 sdbh search "git status" --all --limit 20
 sdbh search kubectl --all --format json --limit 10
+
+# time filtering
+sdbh search kubectl --all --days 30
+sdbh search kubectl --all --since-epoch 1700000000
 ```
 
 ### Summary

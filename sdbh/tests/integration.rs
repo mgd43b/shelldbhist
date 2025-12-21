@@ -464,6 +464,78 @@ fn search_finds_substring_case_insensitive_and_respects_limit() {
 }
 
 #[test]
+fn search_supports_since_epoch_filter() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = tmp.path().join("test.sqlite");
+
+    // Insert 2 rows: one old, one new.
+    let old_epoch = 1_000_000_000i64;
+    let new_epoch = 1_000_000_000i64 + 10_000;
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db_path.to_str().unwrap(),
+            "log",
+            "--cmd",
+            "foo old",
+            "--epoch",
+            &old_epoch.to_string(),
+            "--ppid",
+            "1",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "1",
+            "--no-filter",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db_path.to_str().unwrap(),
+            "log",
+            "--cmd",
+            "foo new",
+            "--epoch",
+            &new_epoch.to_string(),
+            "--ppid",
+            "1",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "1",
+            "--no-filter",
+        ])
+        .assert()
+        .success();
+
+    // Cutoff excludes old, includes new.
+    let cutoff = old_epoch + 1;
+
+    let out = sdbh_cmd()
+        .args([
+            "--db",
+            db_path.to_str().unwrap(),
+            "search",
+            "foo",
+            "--all",
+            "--since-epoch",
+            &cutoff.to_string(),
+            "--limit",
+            "50",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("foo new"));
+    assert!(!stdout.contains("foo old"));
+}
+
+#[test]
 fn search_json_output_is_valid_shape() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("test.sqlite");
