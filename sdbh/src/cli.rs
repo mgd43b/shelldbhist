@@ -26,7 +26,7 @@ pub enum Commands {
     /// Raw chronological history
     List(ListArgs),
 
-    /// Search history by substring (case-insensitive)
+    /// Search history by substring (case-insensitive). Supports time filtering via --since-epoch/--days.
     Search(SearchArgs),
 
     /// Export history as JSON Lines (one JSON object per line)
