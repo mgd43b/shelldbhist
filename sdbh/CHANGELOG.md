@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/mgd43b/shelldbhist/compare/v0.1.5...v0.2.0) (2025-12-21)
+
+
+### Features
+
+* **search:** add time filtering via --since-epoch/--days ([b003bec](https://github.com/mgd43b/shelldbhist/commit/b003bec0982cf623902b897a9007c23cdc149cbd))
+
 ## [0.1.6](https://github.com/mgd43b/shelldbhist/compare/sdbh-v0.1.5...sdbh-v0.1.6) (2025-12-21)
 
 
