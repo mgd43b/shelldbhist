@@ -3,6 +3,13 @@ use predicates::prelude::*;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
+fn sdbh_cmd() -> Command {
+    // Prefer the new macro API to avoid cargo build-dir issues.
+    // (See deprecation notes in assert_cmd.)
+    let exe = assert_cmd::cargo::cargo_bin!("sdbh");
+    Command::new(exe)
+}
+
 fn conn(path: &std::path::Path) -> Connection {
     Connection::open(path).unwrap()
 }
@@ -31,8 +38,7 @@ fn log_inserts_row_and_list_shows_it() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("test.sqlite");
 
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
@@ -53,8 +59,7 @@ fn log_inserts_row_and_list_shows_it() {
         .assert()
         .success();
 
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
@@ -106,8 +111,7 @@ fn import_dedups_by_hash() {
     drop(conn(&src_db));
 
     // Import twice; second should insert 0
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             dst_db.to_string_lossy().as_ref(),
@@ -119,8 +123,7 @@ fn import_dedups_by_hash() {
         .success()
         .stderr(predicate::str::contains("inserted 1"));
 
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             dst_db.to_string_lossy().as_ref(),
@@ -140,8 +143,7 @@ fn summary_groups_and_counts() {
 
     // Insert same command twice
     for epoch in [1700000000i64, 1700000001i64] {
-        Command::cargo_bin("sdbh")
-            .unwrap()
+        sdbh_cmd()
             .args([
                 "--db",
                 db.to_string_lossy().as_ref(),
@@ -162,8 +164,7 @@ fn summary_groups_and_counts() {
     }
 
     // Insert a different command once
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
@@ -182,8 +183,7 @@ fn summary_groups_and_counts() {
         .assert()
         .success();
 
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
@@ -204,8 +204,7 @@ fn list_under_filters_by_pwd_prefix_and_escapes_wildcards() {
     let db = tmp.path().join("test.sqlite");
 
     // Two similar prefixes, one contains SQL wildcard chars
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
@@ -224,8 +223,7 @@ fn list_under_filters_by_pwd_prefix_and_escapes_wildcards() {
         .assert()
         .success();
 
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
@@ -245,8 +243,7 @@ fn list_under_filters_by_pwd_prefix_and_escapes_wildcards() {
         .success();
 
     // Use the new --pwd-override to make this test deterministic
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
@@ -310,8 +307,7 @@ fn import_skips_corrupted_rows_with_text_in_numeric_columns() {
         .unwrap();
     }
 
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             dst_db.to_string_lossy().as_ref(),
@@ -324,8 +320,7 @@ fn import_skips_corrupted_rows_with_text_in_numeric_columns() {
         .stderr(predicate::str::contains("skipped 1 corrupted"));
 
     // Destination should contain the good row
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             dst_db.to_string_lossy().as_ref(),
@@ -353,8 +348,7 @@ fn import_errors_when_history_table_missing() {
             .unwrap();
     }
 
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             dst_db.to_string_lossy().as_ref(),
@@ -372,8 +366,7 @@ fn json_output_is_valid_shape() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("test.sqlite");
 
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
@@ -392,8 +385,7 @@ fn json_output_is_valid_shape() {
         .assert()
         .success();
 
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    sdbh_cmd()
         .args([
             "--db",
             db.to_string_lossy().as_ref(),

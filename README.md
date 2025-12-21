@@ -10,12 +10,26 @@ For now, build from source:
 
 ```bash
 git clone https://github.com/mgd43b/shelldbhist.git
-cd shelldbhist/sdbh
+cd shelldbhist
 cargo build --release
 
 # optional
 cp target/release/sdbh /usr/local/bin/sdbh
 ```
+
+## Releases
+
+This repo publishes binaries via **cargo-dist** on tag push.
+
+```bash
+# create an annotated tag that matches sdbh/Cargo.toml version
+git tag -a v0.1.0 -m "sdbh v0.1.0"
+
+# push the tag to trigger GitHub Actions release
+git push origin v0.1.0
+```
+
+Artifacts will appear in the GitHub Release for that tag.
 
 ## Database
 
@@ -99,6 +113,23 @@ Multiple sources:
 sdbh import --from ~/.dbhist --from /path/other.db
 ```
 
+Note: Some older/hand-edited dbhist databases may contain corrupted rows where numeric
+columns contain TEXT. `sdbh import` will **skip** those rows and print how many it skipped.
+
 ## Notes / Caveats
 - For bash hook mode, `HISTTIMEFORMAT="%s "` is required so `history 1` includes an epoch timestamp.
 - Intercept mode is more invasive; it can capture internal shell commands and may need additional filtering.
+
+## Bash troubleshooting
+- Confirm the function is defined:
+  ```bash
+  type __sdbh_prompt
+  ```
+- Confirm it’s wired into your prompt:
+  ```bash
+  echo "$PROMPT_COMMAND"
+  ```
+- If you updated your rc file, remember to reload it (or re-run):
+  ```bash
+  eval "$(sdbh shell --bash)"
+  ```
