@@ -815,3 +815,157 @@ fn log_no_filter_allows_logging_noisy_commands() {
         .success()
         .stdout(predicate::str::contains("| ls"));
 }
+
+#[test]
+fn log_respects_config_ignore_exact_in_home_sdbh_toml() {
+    let tmp = TempDir::new().unwrap();
+
+    // Fake HOME so sdbh reads config from tmp.
+    let home = tmp.path();
+    std::fs::write(
+        home.join(".sdbh.toml"),
+        r#"[log]
+ignore_exact = ["echo hello"]
+"#,
+    )
+    .unwrap();
+
+    let db = home.join("test.sqlite");
+
+    // This would normally be logged, but config says to ignore it.
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo hello",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("echo hello").not());
+}
+
+#[test]
+fn log_respects_config_use_builtin_ignores_false() {
+    let tmp = TempDir::new().unwrap();
+
+    let home = tmp.path();
+    std::fs::write(
+        home.join(".sdbh.toml"),
+        r#"[log]
+use_builtin_ignores = false
+"#,
+    )
+    .unwrap();
+
+    let db = home.join("test.sqlite");
+
+    // Built-in ignores would skip `ls`, but with use_builtin_ignores=false it should be logged.
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "ls",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("| ls"));
+}
+
+#[test]
+fn log_no_filter_overrides_config() {
+    let tmp = TempDir::new().unwrap();
+
+    let home = tmp.path();
+    std::fs::write(
+        home.join(".sdbh.toml"),
+        r#"[log]
+ignore_exact = ["ls"]
+"#,
+    )
+    .unwrap();
+
+    let db = home.join("test.sqlite");
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--no-filter",
+            "--cmd",
+            "ls",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("| ls"));
+}

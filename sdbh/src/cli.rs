@@ -267,8 +267,11 @@ pub fn run(cli: Cli) -> Result<()> {
 }
 
 fn cmd_log(cfg: DbConfig, args: LogArgs) -> Result<()> {
-    if !args.no_filter && is_noisy_command(&args.cmd) {
-        return Ok(());
+    if !args.no_filter {
+        let filter = LogFilter::load_default();
+        if filter.should_skip(&args.cmd) {
+            return Ok(());
+        }
     }
 
     let mut conn = open_db(&cfg)?;
@@ -287,17 +290,97 @@ fn cmd_log(cfg: DbConfig, args: LogArgs) -> Result<()> {
     Ok(())
 }
 
-fn is_noisy_command(cmd: &str) -> bool {
-    // Goal: avoid DB spam from very common/no-signal commands.
-    // Keep this conservative and easy to understand.
+#[derive(Debug, Default, serde::Deserialize)]
+struct LogConfig {
+    #[serde(default)]
+    ignore_exact: Vec<String>,
 
-    let trimmed = cmd.trim();
-    if trimmed.is_empty() {
-        return true;
+    #[serde(default)]
+    ignore_prefix: Vec<String>,
+
+    #[serde(default = "default_true")]
+    use_builtin_ignores: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+struct ConfigFile {
+    #[serde(default)]
+    log: LogConfig,
+}
+
+#[derive(Debug)]
+struct LogFilter {
+    use_builtin_ignores: bool,
+    ignore_exact: Vec<String>,
+    ignore_prefix: Vec<String>,
+}
+
+impl LogFilter {
+    fn load_default() -> Self {
+        let mut filter = Self {
+            use_builtin_ignores: true,
+            ignore_exact: vec![],
+            ignore_prefix: vec![],
+        };
+
+        if let Some(cfg) = load_config_file() {
+            filter.use_builtin_ignores = cfg.log.use_builtin_ignores;
+            filter.ignore_exact = cfg.log.ignore_exact;
+            filter.ignore_prefix = cfg.log.ignore_prefix;
+        }
+
+        filter
     }
 
-    // Exact ignores (after trimming)
-    match trimmed {
+    fn should_skip(&self, cmd: &str) -> bool {
+        let trimmed = cmd.trim();
+        if trimmed.is_empty() {
+            return true;
+        }
+
+        if self.use_builtin_ignores && is_builtin_noisy_command(trimmed) {
+            return true;
+        }
+
+        if self.ignore_exact.iter().any(|s| s.trim() == trimmed) {
+            return true;
+        }
+
+        for prefix in &self.ignore_prefix {
+            let p = prefix.as_str();
+            if trimmed.starts_with(p) {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+fn config_path() -> Option<std::path::PathBuf> {
+    // User-requested location: ~/.sdbh.toml
+    let home = std::env::var_os("HOME").or_else(|| dirs::home_dir().map(|p| p.into_os_string()))?;
+    let mut p = std::path::PathBuf::from(home);
+    p.push(".sdbh.toml");
+    Some(p)
+}
+
+fn load_config_file() -> Option<ConfigFile> {
+    let path = config_path()?;
+    let text = std::fs::read_to_string(&path).ok()?;
+    toml::from_str::<ConfigFile>(&text).ok()
+}
+
+fn is_builtin_noisy_command(cmd: &str) -> bool {
+    // Built-in filter: keep conservative defaults.
+    // Note: `cmd` is expected to be trimmed.
+
+    // Exact ignores
+    match cmd {
         "ls" | "pwd" | "history" | "clear" | "exit" => return true,
         _ => {}
     }
@@ -305,9 +388,7 @@ fn is_noisy_command(cmd: &str) -> bool {
     // Prefix/word ignores
     // Treat as token prefix: "cd" or "cd <arg>"
     let starts_with_word = |w: &str| {
-        trimmed == w
-            || trimmed.starts_with(&format!("{} ", w))
-            || trimmed.starts_with(&format!("{}\t", w))
+        cmd == w || cmd.starts_with(&format!("{} ", w)) || cmd.starts_with(&format!("{}\t", w))
     };
 
     if starts_with_word("cd") {
