@@ -86,6 +86,23 @@ sdbh log --cmd "echo hello" --epoch "$(date +%s)" --ppid $$ --pwd "$PWD" --salt 
 sdbh log --no-filter --cmd "ls" --epoch "$(date +%s)" --ppid $$ --pwd "$PWD" --salt 123
 ```
 
+### Config (optional)
+`sdbh` reads optional settings from `~/.sdbh.toml`.
+
+Example:
+
+```toml
+[log]
+# Add extra ignores (exact command match)
+ignore_exact = ["echo hello", "make test"]
+
+# Add extra ignores (prefix match)
+ignore_prefix = ["cd ", "sdbh "]
+
+# If false, disables built-in ignores (like `ls`, `pwd`, etc.)
+use_builtin_ignores = true
+```
+
 ### Summary
 Grouped-by-command output (count + last run):
 

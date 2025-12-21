@@ -8,10 +8,14 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.53", features = ["derive"] }
+# (Optional) used to resolve ~/.sdbh.toml robustly.
+dirs = "6.0.0"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
+serde = { version = "1.0.228", features = ["derive"] }
 sha2 = "0.10.9"
 thiserror = "2.0.17"
 time = { version = "0.3.44", features = ["formatting", "macros"] }
+toml = "0.9.10"
 
 [dev-dependencies]
 assert_cmd = "2.1.1"
