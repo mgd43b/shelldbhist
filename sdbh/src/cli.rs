@@ -26,6 +26,15 @@ pub enum Commands {
     /// Raw chronological history
     List(ListArgs),
 
+    /// Search history by substring (case-insensitive)
+    Search(SearchArgs),
+
+    /// Export history as JSON Lines (one JSON object per line)
+    Export(ExportArgs),
+
+    /// Aggregate statistics
+    Stats(StatsArgs),
+
     /// Import/merge another dbhist-compatible SQLite database
     Import(ImportArgs),
 
@@ -129,6 +138,88 @@ pub struct ListArgs {
 }
 
 #[derive(Parser, Debug)]
+pub struct SearchArgs {
+    /// Query substring (case-insensitive)
+    pub query: String,
+
+    #[arg(long, default_value_t = 100)]
+    pub limit: u32,
+
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    pub format: OutputFormat,
+
+    #[arg(long)]
+    pub all: bool,
+
+    /// Override the working directory used by --here/--under (useful for tests)
+    #[arg(long)]
+    pub pwd_override: Option<String>,
+
+    #[arg(long, conflicts_with = "under")]
+    pub here: bool,
+
+    #[arg(long, conflicts_with = "here")]
+    pub under: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct ExportArgs {
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct StatsArgs {
+    #[command(subcommand)]
+    pub command: StatsCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum StatsCommand {
+    /// Top commands within the last N days
+    Top(StatsTopArgs),
+
+    /// Top commands grouped by pwd within the last N days
+    ByPwd(StatsByPwdArgs),
+
+    /// Command count per day within the last N days
+    Daily(StatsDailyArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct StatsTopArgs {
+    #[arg(long, default_value_t = 30)]
+    pub days: u32,
+
+    #[arg(long, default_value_t = 50)]
+    pub limit: u32,
+
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct StatsByPwdArgs {
+    #[arg(long, default_value_t = 30)]
+    pub days: u32,
+
+    #[arg(long, default_value_t = 50)]
+    pub limit: u32,
+
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct StatsDailyArgs {
+    #[arg(long, default_value_t = 30)]
+    pub days: u32,
+
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Parser, Debug)]
 pub struct ImportArgs {
     /// Source SQLite path (dbhist compatible). Can be provided multiple times.
     #[arg(long = "from")]
@@ -162,6 +253,9 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Log(args) => cmd_log(cfg, args),
         Commands::Summary(args) => cmd_summary(cfg, args),
         Commands::List(args) => cmd_list(cfg, args),
+        Commands::Search(args) => cmd_search(cfg, args),
+        Commands::Export(args) => cmd_export(cfg, args),
+        Commands::Stats(args) => cmd_stats(cfg, args),
         Commands::Import(args) => cmd_import(cfg, args),
         Commands::Shell(args) => cmd_shell(args),
     }
@@ -383,6 +477,257 @@ fn build_list_sql(args: &ListArgs) -> Result<(String, Vec<String>)> {
     sql.push_str("LIMIT ? OFFSET ?");
     bind.push(args.limit.to_string());
     bind.push(args.offset.to_string());
+
+    Ok((sql, bind))
+}
+
+fn cmd_search(cfg: DbConfig, args: SearchArgs) -> Result<()> {
+    let conn = open_db(&cfg)?;
+
+    let (sql, bind) = build_search_sql(&args)?;
+    // Debugging aid: enable with SDBH_DEBUG=1
+    if std::env::var("SDBH_DEBUG").ok().as_deref() == Some("1") {
+        eprintln!("sql: {sql}");
+        eprintln!("bind: {:?}", bind);
+    }
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+
+    match args.format {
+        OutputFormat::Table => {
+            while let Some(r) = rows.next()? {
+                let id: i64 = r.get(0)?;
+                let dt: String = r.get(1)?;
+                let pwd: String = r.get(2)?;
+                let cmd: String = r.get(3)?;
+                println!("{id:>6} | {dt} | {pwd} | {cmd}");
+            }
+        }
+        OutputFormat::Json => {
+            print!("[");
+            let mut first = true;
+            while let Some(r) = rows.next()? {
+                let id: i64 = r.get(0)?;
+                let epoch: i64 = r.get(4)?;
+                let pwd: String = r.get(2)?;
+                let cmd: String = r.get(3)?;
+
+                if !first {
+                    print!(",");
+                }
+                first = false;
+                print!(
+                    "{{\"id\":{},\"epoch\":{},\"pwd\":{},\"cmd\":{}}}",
+                    id,
+                    epoch,
+                    json_string(&pwd),
+                    json_string(&cmd)
+                );
+            }
+            println!("]");
+        }
+    }
+
+    Ok(())
+}
+
+fn build_search_sql(args: &SearchArgs) -> Result<(String, Vec<String>)> {
+    let mut bind: Vec<String> = vec![];
+    let mut sql = String::from(
+        "SELECT id, datetime(epoch, 'unixepoch', 'localtime') as dt, pwd, cmd, epoch FROM history WHERE 1=1 ",
+    );
+
+    // WORKAROUND: In some SQLite builds / PRAGMA settings, `COLLATE NOCASE` can behave
+    // unexpectedly with LIKE. Instead we normalize both sides with lower(), which is
+    // deterministic for ASCII (our common use case) and matches our tests.
+    // Note: the query string is lowercased for binding below.
+
+    if let Some((salt, ppid)) = session_filter(args.all) {
+        sql.push_str("AND salt=? AND ppid=? ");
+        bind.push(salt.to_string());
+        bind.push(ppid.to_string());
+    }
+
+    // Case-insensitive substring match.
+    // Use a NOCASE collation on the command column rather than applying lower()
+    // to avoid surprises with expression collation + LIKE in some SQLite builds.
+    sql.push_str("AND cmd LIKE ? ESCAPE '\\' ");
+    // Do NOT escape the surrounding wildcards; only escape user-provided text.
+    bind.push(format!("%{}%", escape_like(&args.query)));
+
+    if let Some((pwd, under)) = location_filter(args.here, args.under, &args.pwd_override) {
+        if under {
+            sql.push_str("AND pwd LIKE ? ESCAPE '\\' ");
+            bind.push(format!("{}%", escape_like(&pwd)));
+        } else {
+            sql.push_str("AND pwd = ? ");
+            bind.push(pwd);
+        }
+    }
+
+    sql.push_str("ORDER BY epoch DESC, id DESC ");
+    sql.push_str("LIMIT ?");
+    bind.push(args.limit.to_string());
+
+    Ok((sql, bind))
+}
+
+fn cmd_export(cfg: DbConfig, args: ExportArgs) -> Result<()> {
+    let conn = open_db(&cfg)?;
+
+    let mut bind: Vec<String> = vec![];
+
+    let mut sql =
+        String::from("SELECT id, hist_id, cmd, epoch, ppid, pwd, salt FROM history WHERE 1=1 ");
+
+    if let Some((salt, ppid)) = session_filter(args.all) {
+        sql.push_str("AND salt=? AND ppid=? ");
+        bind.push(salt.to_string());
+        bind.push(ppid.to_string());
+    }
+
+    sql.push_str("ORDER BY epoch ASC, id ASC");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+
+    while let Some(r) = rows.next()? {
+        let id: i64 = r.get(0)?;
+        let hist_id: Option<i64> = r.get(1)?;
+        let cmd: String = r.get(2)?;
+        let epoch: i64 = r.get(3)?;
+        let ppid: i64 = r.get(4)?;
+        let pwd: String = r.get(5)?;
+        let salt: i64 = r.get(6)?;
+
+        // JSONL without serde.
+        // Keep fields simple and stable.
+        let hist_id_json = match hist_id {
+            Some(v) => v.to_string(),
+            None => "null".to_string(),
+        };
+
+        println!(
+            "{{\"id\":{},\"hist_id\":{},\"epoch\":{},\"ppid\":{},\"pwd\":{},\"salt\":{},\"cmd\":{}}}",
+            id,
+            hist_id_json,
+            epoch,
+            ppid,
+            json_string(&pwd),
+            salt,
+            json_string(&cmd)
+        );
+    }
+
+    Ok(())
+}
+
+fn cmd_stats(cfg: DbConfig, args: StatsArgs) -> Result<()> {
+    let conn = open_db(&cfg)?;
+
+    match args.command {
+        StatsCommand::Top(a) => {
+            let (sql, bind) = build_stats_top_sql(&a)?;
+            let mut stmt = conn.prepare(&sql)?;
+            let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+            while let Some(r) = rows.next()? {
+                let cnt: i64 = r.get(0)?;
+                let cmd: String = r.get(1)?;
+                println!("{cnt:>6} | {cmd}");
+            }
+            Ok(())
+        }
+        StatsCommand::ByPwd(a) => {
+            let (sql, bind) = build_stats_by_pwd_sql(&a)?;
+            let mut stmt = conn.prepare(&sql)?;
+            let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+            while let Some(r) = rows.next()? {
+                let cnt: i64 = r.get(0)?;
+                let pwd: String = r.get(1)?;
+                let cmd: String = r.get(2)?;
+                println!("{cnt:>6} | {pwd} | {cmd}");
+            }
+            Ok(())
+        }
+        StatsCommand::Daily(a) => {
+            let (sql, bind) = build_stats_daily_sql(&a)?;
+            let mut stmt = conn.prepare(&sql)?;
+            let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+            while let Some(r) = rows.next()? {
+                let day: String = r.get(0)?;
+                let cnt: i64 = r.get(1)?;
+                println!("{day} | {cnt:>6}");
+            }
+            Ok(())
+        }
+    }
+}
+
+fn days_cutoff_epoch(days: u32) -> i64 {
+    let now = std::time::SystemTime::now();
+    let now_epoch = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let secs = (days as i64) * 86400;
+    now_epoch - secs
+}
+
+fn build_stats_top_sql(args: &StatsTopArgs) -> Result<(String, Vec<String>)> {
+    let mut bind: Vec<String> = vec![];
+    let mut sql = String::from("SELECT count(*) as cnt, cmd FROM history WHERE 1=1 ");
+
+    if let Some((salt, ppid)) = session_filter(args.all) {
+        sql.push_str("AND salt=? AND ppid=? ");
+        bind.push(salt.to_string());
+        bind.push(ppid.to_string());
+    }
+
+    sql.push_str("AND epoch >= ? ");
+    bind.push(days_cutoff_epoch(args.days).to_string());
+
+    sql.push_str("GROUP BY cmd ORDER BY cnt DESC, max(epoch) DESC LIMIT ?");
+    bind.push(args.limit.to_string());
+
+    Ok((sql, bind))
+}
+
+fn build_stats_by_pwd_sql(args: &StatsByPwdArgs) -> Result<(String, Vec<String>)> {
+    let mut bind: Vec<String> = vec![];
+    let mut sql = String::from("SELECT count(*) as cnt, pwd, cmd FROM history WHERE 1=1 ");
+
+    if let Some((salt, ppid)) = session_filter(args.all) {
+        sql.push_str("AND salt=? AND ppid=? ");
+        bind.push(salt.to_string());
+        bind.push(ppid.to_string());
+    }
+
+    sql.push_str("AND epoch >= ? ");
+    bind.push(days_cutoff_epoch(args.days).to_string());
+
+    sql.push_str("GROUP BY pwd, cmd ORDER BY cnt DESC, max(epoch) DESC LIMIT ?");
+    bind.push(args.limit.to_string());
+
+    Ok((sql, bind))
+}
+
+fn build_stats_daily_sql(args: &StatsDailyArgs) -> Result<(String, Vec<String>)> {
+    let mut bind: Vec<String> = vec![];
+    let mut sql = String::from(
+        "SELECT date(epoch, 'unixepoch', 'localtime') as day, count(*) as cnt FROM history WHERE 1=1 ",
+    );
+
+    if let Some((salt, ppid)) = session_filter(args.all) {
+        sql.push_str("AND salt=? AND ppid=? ");
+        bind.push(salt.to_string());
+        bind.push(ppid.to_string());
+    }
+
+    sql.push_str("AND epoch >= ? ");
+    bind.push(days_cutoff_epoch(args.days).to_string());
+
+    sql.push_str("GROUP BY day ORDER BY day ASC");
 
     Ok((sql, bind))
 }

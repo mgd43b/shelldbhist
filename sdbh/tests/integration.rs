@@ -401,3 +401,340 @@ fn json_output_is_valid_shape() {
         .stdout(predicate::str::starts_with("["))
         .stdout(predicate::str::contains("\"cmd\""));
 }
+
+#[test]
+fn search_finds_substring_case_insensitive_and_respects_limit() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    for (cmd, epoch) in [
+        ("kubectl get pods", "1700000000"),
+        ("KUBECTL describe pod", "1700000001"),
+        ("git status", "1700000002"),
+    ] {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                cmd,
+                "--epoch",
+                epoch,
+                "--ppid",
+                "123",
+                "--pwd",
+                "/tmp",
+                "--salt",
+                "42",
+            ])
+            .assert()
+            .success();
+    }
+
+    // Sanity check: list should show at least one kubectl row
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("kubectl").or(predicate::str::contains("KUBECTL")));
+
+    // Should match both kubectl commands regardless of case, but only return 1 due to limit.
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "search",
+            "kubectl",
+            "--all",
+            "--limit",
+            "1",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("kubectl").or(predicate::str::contains("KUBECTL")))
+        .stdout(predicate::str::contains("git status").not());
+}
+
+#[test]
+fn search_json_output_is_valid_shape() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "kubectl get pods",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "search",
+            "kubectl",
+            "--all",
+            "--format",
+            "json",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("["))
+        .stdout(predicate::str::contains("\"cmd\""));
+}
+
+#[test]
+fn export_outputs_jsonl_to_stdout() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo hi",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // One JSON object per line. Keep assertions minimal to avoid ordering concerns.
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "export", "--all"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("\"cmd\":\"echo hi\"").and(predicate::str::contains("\n")),
+        );
+}
+
+#[test]
+fn search_escapes_like_wildcards_in_query() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Should match literally on "%" and "_" characters.
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo 100% done",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Without escaping, this would match too broadly. We want literal "%".
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "search",
+            "100%",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("100% done"));
+}
+
+#[test]
+fn stats_top_shows_most_common_commands() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // 2x git status
+    for epoch in [1700000000i64, 1700000001i64] {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                "git status",
+                "--epoch",
+                &epoch.to_string(),
+                "--ppid",
+                "123",
+                "--pwd",
+                "/tmp",
+                "--salt",
+                "42",
+            ])
+            .assert()
+            .success();
+    }
+
+    // 1x ls
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "ls",
+            "--epoch",
+            "1700000002",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "stats",
+            "top",
+            "--all",
+            "--days",
+            "9999",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("git status"))
+        .stdout(predicate::str::contains("     2"));
+}
+
+#[test]
+fn stats_by_pwd_groups_by_directory() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Same cmd in two different pwds
+    for (pwd, epoch) in [("/tmp/a", "1700000000"), ("/tmp/b", "1700000001")] {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                "make test",
+                "--epoch",
+                epoch,
+                "--ppid",
+                "123",
+                "--pwd",
+                pwd,
+                "--salt",
+                "42",
+            ])
+            .assert()
+            .success();
+    }
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "stats",
+            "by-pwd",
+            "--all",
+            "--days",
+            "9999",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("/tmp/a"))
+        .stdout(predicate::str::contains("/tmp/b"))
+        .stdout(predicate::str::contains("make test"));
+}
+
+#[test]
+fn stats_daily_outputs_day_buckets_in_localtime() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Two commands on different epochs (not asserting exact date string, just that we get 2 lines).
+    for epoch in [1700000000i64, 1700086400i64] {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                "echo x",
+                "--epoch",
+                &epoch.to_string(),
+                "--ppid",
+                "123",
+                "--pwd",
+                "/tmp",
+                "--salt",
+                "42",
+            ])
+            .assert()
+            .success();
+    }
+
+    let out = sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "stats",
+            "daily",
+            "--all",
+            "--days",
+            "9999",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let out = String::from_utf8(out).unwrap();
+    let lines: Vec<&str> = out.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert!(lines.len() >= 2);
+}

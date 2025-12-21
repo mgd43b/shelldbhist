@@ -100,6 +100,36 @@ sdbh list --all --limit 50
 sdbh list --all --format json
 ```
 
+### Search
+Substring search (case-insensitive):
+
+```bash
+sdbh search kubectl --all --limit 50
+sdbh search "git status" --all --limit 20
+sdbh search kubectl --all --format json --limit 10
+```
+
+### Export
+Export history as JSON Lines (JSONL) to stdout:
+
+```bash
+sdbh export --all > sdbh.jsonl
+```
+
+### Stats
+Quick aggregates:
+
+```bash
+# top commands in last N days
+sdbh stats top --all --days 30 --limit 20
+
+# top commands per directory
+sdbh stats by-pwd --all --days 30 --limit 20
+
+# commands per day (localtime buckets)
+sdbh stats daily --all --days 30
+```
+
 ### Import
 Import/merge an existing `dbhist.sh` database (hash de-dup):
 
