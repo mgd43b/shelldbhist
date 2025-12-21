@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/mgd43b/shelldbhist/compare/v0.2.0...v0.2.1) (2025-12-21)
+
+
+### Bug Fixes
+
+* **cli:** clarify search supports time filtering ([058b589](https://github.com/mgd43b/shelldbhist/commit/058b589840c255fa501f7e307e796dea1307df0a))
+
 ## [0.2.0](https://github.com/mgd43b/shelldbhist/compare/v0.1.5...v0.2.0) (2025-12-21)
 
 
