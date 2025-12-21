@@ -21,12 +21,25 @@ cp target/release/sdbh /usr/local/bin/sdbh
 
 This repo publishes binaries via **cargo-dist** on tag push.
 
-```bash
-# create an annotated tag that matches sdbh/Cargo.toml version
-git tag -a v0.1.0 -m "sdbh v0.1.0"
+### Automated releases (recommended): Release Please
+We use **release-please** to automate version bumps + tagging.
 
-# push the tag to trigger GitHub Actions release
-git push origin v0.1.0
+Workflow:
+1. Merge PRs into `main` (use **Conventional Commit** titles like `feat: ...`, `fix: ...`).
+2. release-please opens/updates a **Release PR**.
+3. Merge the Release PR.
+4. release-please creates a tag `vX.Y.Z` + GitHub Release.
+5. cargo-dist Release workflow runs on that tag and uploads binaries.
+
+### Manual releases (fallback)
+```bash
+# 1) bump version in sdbh/Cargo.toml
+# 2) commit it
+# 3) tag the commit with the same version
+git tag -a v0.1.5 -m "sdbh v0.1.5"
+
+# 4) push the tag to trigger GitHub Actions release
+git push origin v0.1.5
 ```
 
 Artifacts will appear in the GitHub Release for that tag.

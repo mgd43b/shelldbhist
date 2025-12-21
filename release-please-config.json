@@ -1,0 +1,19 @@
+{
+  "release-type": "rust",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "include-v-in-tag": true,
+  "packages": {
+    "sdbh": {
+      "release-type": "rust",
+      "component": "sdbh",
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "sdbh/Cargo.toml",
+          "jsonpath": "$.package.version"
+        }
+      ]
+    }
+  }
+}
