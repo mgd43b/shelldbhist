@@ -417,7 +417,9 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-memory-bank
+# memory-bank/
+# (Ignored by default; local planning docs. If you want to commit it, remove these lines.)
+memory-bank/
 
 # Rust build artifacts
 /target/
