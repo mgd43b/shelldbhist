@@ -1074,3 +1074,44 @@ fn import_history_zsh_parses_extended_history_format() {
         .success()
         .stdout(predicate::str::contains("echo zsh"));
 }
+
+#[test]
+fn doctor_reports_missing_env_vars_when_not_set() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    sdbh_cmd()
+        .env_remove("SDBH_SALT")
+        .env_remove("SDBH_PPID")
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "doctor",
+            "--no-spawn",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("SDBH_SALT").and(predicate::str::contains("is not set")))
+        .stdout(predicate::str::contains("SDBH_PPID").and(predicate::str::contains("is not set")));
+}
+
+#[test]
+fn doctor_detects_hook_via_prompt_command_env() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    sdbh_cmd()
+        .env("PROMPT_COMMAND", "__sdbh_prompt")
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "doctor",
+            "--no-spawn",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("bash.hook.env")
+                .and(predicate::str::contains("contains __sdbh_prompt")),
+        );
+}

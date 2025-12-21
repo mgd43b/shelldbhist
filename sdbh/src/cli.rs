@@ -42,6 +42,9 @@ pub enum Commands {
     #[command(name = "import-history")]
     ImportHistory(ImportHistoryArgs),
 
+    /// Diagnose shell integration / DB setup
+    Doctor(DoctorArgs),
+
     /// Print shell integration snippets
     Shell(ShellArgs),
 }
@@ -263,6 +266,20 @@ pub struct ImportHistoryArgs {
 }
 
 #[derive(Parser, Debug)]
+pub struct DoctorArgs {
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    pub format: OutputFormat,
+
+    /// Skip spawning subshells for deeper inspection.
+    #[arg(long, conflicts_with = "spawn_only")]
+    pub no_spawn: bool,
+
+    /// Only use spawned subshell inspection.
+    #[arg(long, conflicts_with = "no_spawn")]
+    pub spawn_only: bool,
+}
+
+#[derive(Parser, Debug)]
 pub struct ShellArgs {
     /// Print bash integration
     #[arg(long)]
@@ -290,6 +307,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Stats(args) => cmd_stats(cfg, args),
         Commands::Import(args) => cmd_import(cfg, args),
         Commands::ImportHistory(args) => cmd_import_history(cfg, args),
+        Commands::Doctor(args) => cmd_doctor(cfg, args),
         Commands::Shell(args) => cmd_shell(args),
     }
 }
@@ -944,15 +962,11 @@ fn cmd_import_history(cfg: DbConfig, args: ImportHistoryArgs) -> Result<()> {
         anyhow::bail!("one of --bash or --zsh is required");
     };
 
-    let now_epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-
     // Assign synthetic sequential timestamps for entries that don't have an epoch.
-    // Strategy: preserve ordering by assigning a stable increasing sequence ending at now.
+    // For stable dedup on repeated imports, synthetic timestamps must be deterministic.
+    // Use a fixed epoch base for missing timestamps (preserves ordering but not real time).
     let missing = entries.iter().filter(|e| e.epoch.is_none()).count() as i64;
-    let mut next_synth_epoch = now_epoch - missing;
+    let mut next_synth_epoch = 1_000_000_000i64 - missing;
 
     let mut considered = 0u64;
     let mut inserted = 0u64;
@@ -995,6 +1009,361 @@ fn cmd_import_history(cfg: DbConfig, args: ImportHistoryArgs) -> Result<()> {
 
     eprintln!("import-history: considered {considered}, inserted {inserted}");
     Ok(())
+}
+
+fn cmd_doctor(cfg: DbConfig, args: DoctorArgs) -> Result<()> {
+    let mut checks: Vec<DoctorCheck> = vec![];
+
+    // --- DB check ---
+    let db_path = cfg.path.clone();
+    let db_display = db_path.to_string_lossy().to_string();
+
+    match open_db(&cfg) {
+        Ok(mut conn) => {
+            // Basic write check: create a temp table and rollback.
+            let write_ok = (|| {
+                let tx = conn.transaction()?;
+                tx.execute_batch("CREATE TABLE IF NOT EXISTS __sdbh_doctor_tmp(id INTEGER);")?;
+                tx.rollback()?;
+                Ok::<(), rusqlite::Error>(())
+            })()
+            .is_ok();
+
+            checks.push(DoctorCheck::ok("db.open", format!("opened {db_display}")));
+
+            if write_ok {
+                checks.push(DoctorCheck::ok(
+                    "db.write",
+                    "write transaction OK".to_string(),
+                ));
+            } else {
+                checks.push(DoctorCheck::warn(
+                    "db.write",
+                    "db opened but write test failed".to_string(),
+                ));
+            }
+        }
+        Err(e) => {
+            checks.push(DoctorCheck::fail(
+                "db.open",
+                format!("failed to open {db_display}: {e}"),
+            ));
+        }
+    }
+
+    // --- Env vars ---
+    checks.extend(check_env_i64("SDBH_SALT"));
+    checks.extend(check_env_i64("SDBH_PPID"));
+
+    // --- Env-only shell detection ---
+    if !args.spawn_only {
+        if let Ok(pc) = std::env::var("PROMPT_COMMAND") {
+            if pc.contains("__sdbh_prompt") {
+                checks.push(DoctorCheck::ok(
+                    "bash.hook.env",
+                    "PROMPT_COMMAND contains __sdbh_prompt".to_string(),
+                ));
+            } else {
+                checks.push(DoctorCheck::info(
+                    "bash.hook.env",
+                    "PROMPT_COMMAND does not contain __sdbh_prompt".to_string(),
+                ));
+            }
+        } else {
+            checks.push(DoctorCheck::info(
+                "bash.hook.env",
+                "PROMPT_COMMAND not set".to_string(),
+            ));
+        }
+    }
+
+    // --- Spawned shell inspection ---
+    if !args.no_spawn {
+        if let Some(bash) = which("bash") {
+            match spawn_bash_inspect(&bash) {
+                Ok(rep) => {
+                    checks.push(DoctorCheck::info(
+                        "bash.spawn",
+                        format!("ok: {}", rep.summary()),
+                    ));
+                    if rep.prompt_command.contains("__sdbh_prompt") {
+                        checks.push(DoctorCheck::ok(
+                            "bash.hook.spawn",
+                            "PROMPT_COMMAND contains __sdbh_prompt".to_string(),
+                        ));
+                    } else {
+                        checks.push(DoctorCheck::info(
+                            "bash.hook.spawn",
+                            "PROMPT_COMMAND missing __sdbh_prompt".to_string(),
+                        ));
+                    }
+
+                    if rep.trap_debug.contains("__sdbh_debug_trap") {
+                        checks.push(DoctorCheck::ok(
+                            "bash.intercept.spawn",
+                            "DEBUG trap contains __sdbh_debug_trap".to_string(),
+                        ));
+                    } else {
+                        checks.push(DoctorCheck::info(
+                            "bash.intercept.spawn",
+                            "DEBUG trap missing __sdbh_debug_trap".to_string(),
+                        ));
+                    }
+                }
+                Err(e) => checks.push(DoctorCheck::warn(
+                    "bash.spawn",
+                    format!("failed to inspect bash: {e}"),
+                )),
+            }
+        } else {
+            checks.push(DoctorCheck::info(
+                "bash.spawn",
+                "bash not found on PATH".to_string(),
+            ));
+        }
+
+        if let Some(zsh) = which("zsh") {
+            match spawn_zsh_inspect(&zsh) {
+                Ok(rep) => {
+                    checks.push(DoctorCheck::info(
+                        "zsh.spawn",
+                        format!("ok: {}", rep.summary()),
+                    ));
+
+                    if rep.precmd_functions.contains("sdbh_precmd") {
+                        checks.push(DoctorCheck::ok(
+                            "zsh.hook.spawn",
+                            "precmd_functions contains sdbh_precmd".to_string(),
+                        ));
+                    } else {
+                        checks.push(DoctorCheck::info(
+                            "zsh.hook.spawn",
+                            "precmd_functions missing sdbh_precmd".to_string(),
+                        ));
+                    }
+
+                    if rep.preexec_functions.contains("sdbh_preexec") {
+                        checks.push(DoctorCheck::ok(
+                            "zsh.intercept.spawn",
+                            "preexec_functions contains sdbh_preexec".to_string(),
+                        ));
+                    } else {
+                        checks.push(DoctorCheck::info(
+                            "zsh.intercept.spawn",
+                            "preexec_functions missing sdbh_preexec".to_string(),
+                        ));
+                    }
+                }
+                Err(e) => checks.push(DoctorCheck::warn(
+                    "zsh.spawn",
+                    format!("failed to inspect zsh: {e}"),
+                )),
+            }
+        } else {
+            checks.push(DoctorCheck::info(
+                "zsh.spawn",
+                "zsh not found on PATH".to_string(),
+            ));
+        }
+    }
+
+    output_doctor(&checks, args.format);
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DoctorStatus {
+    Ok,
+    Warn,
+    Fail,
+    Info,
+}
+
+#[derive(Debug, Clone)]
+struct DoctorCheck {
+    name: &'static str,
+    status: DoctorStatus,
+    detail: String,
+}
+
+impl DoctorCheck {
+    fn ok(name: &'static str, detail: String) -> Self {
+        Self {
+            name,
+            status: DoctorStatus::Ok,
+            detail,
+        }
+    }
+
+    fn warn(name: &'static str, detail: String) -> Self {
+        Self {
+            name,
+            status: DoctorStatus::Warn,
+            detail,
+        }
+    }
+
+    fn fail(name: &'static str, detail: String) -> Self {
+        Self {
+            name,
+            status: DoctorStatus::Fail,
+            detail,
+        }
+    }
+
+    fn info(name: &'static str, detail: String) -> Self {
+        Self {
+            name,
+            status: DoctorStatus::Info,
+            detail,
+        }
+    }
+}
+
+fn check_env_i64(key: &'static str) -> Vec<DoctorCheck> {
+    match std::env::var(key) {
+        Ok(v) => match v.parse::<i64>() {
+            Ok(_) => vec![DoctorCheck::ok(key, format!("{key}={v}"))],
+            Err(_) => vec![DoctorCheck::warn(
+                key,
+                format!("{key} is set but not an integer: {v}"),
+            )],
+        },
+        Err(_) => vec![DoctorCheck::warn(key, format!("{key} is not set"))],
+    }
+}
+
+fn status_str(s: DoctorStatus) -> &'static str {
+    match s {
+        DoctorStatus::Ok => "ok",
+        DoctorStatus::Warn => "warn",
+        DoctorStatus::Fail => "fail",
+        DoctorStatus::Info => "info",
+    }
+}
+
+fn output_doctor(checks: &[DoctorCheck], format: OutputFormat) {
+    match format {
+        OutputFormat::Table => {
+            for c in checks {
+                println!("{:18} | {:5} | {}", c.name, status_str(c.status), c.detail);
+            }
+        }
+        OutputFormat::Json => {
+            print!("[");
+            let mut first = true;
+            for c in checks {
+                if !first {
+                    print!(",");
+                }
+                first = false;
+                print!(
+                    "{{\"check\":{},\"status\":{},\"detail\":{}}}",
+                    json_string(c.name),
+                    json_string(status_str(c.status)),
+                    json_string(&c.detail)
+                );
+            }
+            println!("]");
+        }
+    }
+}
+
+fn which(bin: &str) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let p = dir.join(bin);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+#[derive(Debug)]
+struct BashInspect {
+    prompt_command: String,
+    trap_debug: String,
+}
+
+impl BashInspect {
+    fn summary(&self) -> String {
+        format!(
+            "prompt_command_len={}, trap_debug_len={}",
+            self.prompt_command.len(),
+            self.trap_debug.len()
+        )
+    }
+}
+
+fn spawn_bash_inspect(bash: &std::path::Path) -> Result<BashInspect> {
+    let out = std::process::Command::new(bash)
+        .args([
+            "-lc",
+            "echo __SDBH_PROMPT_COMMAND__=$PROMPT_COMMAND; echo __SDBH_TRAP_DEBUG__=$(trap -p DEBUG)",
+        ])
+        .output()?;
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut prompt_command = String::new();
+    let mut trap_debug = String::new();
+
+    for line in stdout.lines() {
+        if let Some(v) = line.strip_prefix("__SDBH_PROMPT_COMMAND__=") {
+            prompt_command = v.to_string();
+        }
+        if let Some(v) = line.strip_prefix("__SDBH_TRAP_DEBUG__=") {
+            trap_debug = v.to_string();
+        }
+    }
+
+    Ok(BashInspect {
+        prompt_command,
+        trap_debug,
+    })
+}
+
+#[derive(Debug)]
+struct ZshInspect {
+    precmd_functions: String,
+    preexec_functions: String,
+}
+
+impl ZshInspect {
+    fn summary(&self) -> String {
+        format!(
+            "precmd_len={}, preexec_len={}",
+            self.precmd_functions.len(),
+            self.preexec_functions.len()
+        )
+    }
+}
+
+fn spawn_zsh_inspect(zsh: &std::path::Path) -> Result<ZshInspect> {
+    let out = std::process::Command::new(zsh)
+        .args([
+            "-lc",
+            "echo __SDBH_PRECMD__=${precmd_functions[*]}; echo __SDBH_PREEXEC__=${preexec_functions[*]}",
+        ])
+        .output()?;
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut precmd_functions = String::new();
+    let mut preexec_functions = String::new();
+
+    for line in stdout.lines() {
+        if let Some(v) = line.strip_prefix("__SDBH_PRECMD__=") {
+            precmd_functions = v.to_string();
+        }
+        if let Some(v) = line.strip_prefix("__SDBH_PREEXEC__=") {
+            preexec_functions = v.to_string();
+        }
+    }
+
+    Ok(ZshInspect {
+        precmd_functions,
+        preexec_functions,
+    })
 }
 
 #[derive(Debug, Clone)]

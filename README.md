@@ -183,6 +183,33 @@ sdbh import-history --zsh ~/.zsh_history --pwd "$PWD"
 
 If a history file doesn’t include timestamps (common for bash), `sdbh` assigns **synthetic sequential timestamps** to preserve ordering.
 
+### Doctor
+Diagnose your setup (DB access, env vars, and shell integration).
+
+```bash
+sdbh doctor
+
+# Only run env-based checks (don’t spawn shells)
+sdbh doctor --no-spawn
+
+# Only run spawned-shell checks
+sdbh doctor --spawn-only
+
+# JSON output (minimal, scripting-friendly)
+sdbh doctor --format json
+```
+
+What it checks:
+- DB path is openable/writable (based on `--db` override or default `~/.sdbh.sqlite`).
+- `SDBH_SALT` and `SDBH_PPID` are present and integers.
+- Shell integration detection:
+  - env-only heuristics (e.g. bash `PROMPT_COMMAND` contains `__sdbh_prompt`)
+  - spawned shell introspection:
+    - bash: `trap -p DEBUG` and `PROMPT_COMMAND`
+    - zsh: `precmd_functions` / `preexec_functions`
+
+Note: spawned-shell detection is best-effort and depends on what your shell loads in non-interactive mode.
+
 ## Notes / Caveats
 - For bash hook mode, `HISTTIMEFORMAT="%s "` is required so `history 1` includes an epoch timestamp.
 - Intercept mode is more invasive; it can capture internal shell commands and may need additional filtering.
