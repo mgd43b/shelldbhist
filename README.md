@@ -81,6 +81,9 @@ sdbh shell --zsh --intercept
 
 ```bash
 sdbh log --cmd "echo hello" --epoch "$(date +%s)" --ppid $$ --pwd "$PWD" --salt 123
+
+# Force logging even if the command is considered "noisy" by default
+sdbh log --no-filter --cmd "ls" --epoch "$(date +%s)" --ppid $$ --pwd "$PWD" --salt 123
 ```
 
 ### Summary

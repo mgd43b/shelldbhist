@@ -61,6 +61,11 @@ pub struct LogArgs {
 
     #[arg(long)]
     pub hist_id: Option<i64>,
+
+    /// Disable default noisy-command filtering.
+    /// Useful for debugging shell integration.
+    #[arg(long)]
+    pub no_filter: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -262,6 +267,10 @@ pub fn run(cli: Cli) -> Result<()> {
 }
 
 fn cmd_log(cfg: DbConfig, args: LogArgs) -> Result<()> {
+    if !args.no_filter && is_noisy_command(&args.cmd) {
+        return Ok(());
+    }
+
     let mut conn = open_db(&cfg)?;
     ensure_hash_index(&conn)?;
 
@@ -276,6 +285,46 @@ fn cmd_log(cfg: DbConfig, args: LogArgs) -> Result<()> {
 
     insert_history(&mut conn, &row)?;
     Ok(())
+}
+
+fn is_noisy_command(cmd: &str) -> bool {
+    // Goal: avoid DB spam from very common/no-signal commands.
+    // Keep this conservative and easy to understand.
+
+    let trimmed = cmd.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+
+    // Exact ignores (after trimming)
+    match trimmed {
+        "ls" | "pwd" | "history" | "clear" | "exit" => return true,
+        _ => {}
+    }
+
+    // Prefix/word ignores
+    // Treat as token prefix: "cd" or "cd <arg>"
+    let starts_with_word = |w: &str| {
+        trimmed == w
+            || trimmed.starts_with(&format!("{} ", w))
+            || trimmed.starts_with(&format!("{}\t", w))
+    };
+
+    if starts_with_word("cd") {
+        return true;
+    }
+
+    // Avoid self-logging (sdbh commands)
+    if starts_with_word("sdbh") {
+        return true;
+    }
+
+    // Also treat `ls -la` etc as noisy.
+    if starts_with_word("ls") {
+        return true;
+    }
+
+    false
 }
 
 fn session_filter(all: bool) -> Option<(i64, i64)> {

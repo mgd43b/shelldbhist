@@ -738,3 +738,80 @@ fn stats_daily_outputs_day_buckets_in_localtime() {
     let lines: Vec<&str> = out.lines().filter(|l| !l.trim().is_empty()).collect();
     assert!(lines.len() >= 2);
 }
+
+#[test]
+fn log_skips_noisy_commands_by_default() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "ls",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("| ls").not());
+}
+
+#[test]
+fn log_no_filter_allows_logging_noisy_commands() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--no-filter",
+            "--cmd",
+            "ls",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("| ls"));
+}
