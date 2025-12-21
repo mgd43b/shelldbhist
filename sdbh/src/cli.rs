@@ -38,6 +38,10 @@ pub enum Commands {
     /// Import/merge another dbhist-compatible SQLite database
     Import(ImportArgs),
 
+    /// Import from shell history files (bash/zsh)
+    #[command(name = "import-history")]
+    ImportHistory(ImportHistoryArgs),
+
     /// Print shell integration snippets
     Shell(ShellArgs),
 }
@@ -236,6 +240,29 @@ pub struct ImportArgs {
 }
 
 #[derive(Parser, Debug)]
+pub struct ImportHistoryArgs {
+    /// Path to a bash history file (e.g. ~/.bash_history)
+    #[arg(long, conflicts_with = "zsh")]
+    pub bash: Option<PathBuf>,
+
+    /// Path to a zsh history file (e.g. ~/.zsh_history)
+    #[arg(long, conflicts_with = "bash")]
+    pub zsh: Option<PathBuf>,
+
+    /// PWD to store on imported entries (default: current directory)
+    #[arg(long)]
+    pub pwd: Option<String>,
+
+    /// Salt to store on imported entries (default: 0)
+    #[arg(long, default_value_t = 0)]
+    pub salt: i64,
+
+    /// PPID to store on imported entries (default: 0)
+    #[arg(long, default_value_t = 0)]
+    pub ppid: i64,
+}
+
+#[derive(Parser, Debug)]
 pub struct ShellArgs {
     /// Print bash integration
     #[arg(long)]
@@ -262,6 +289,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Export(args) => cmd_export(cfg, args),
         Commands::Stats(args) => cmd_stats(cfg, args),
         Commands::Import(args) => cmd_import(cfg, args),
+        Commands::ImportHistory(args) => cmd_import_history(cfg, args),
         Commands::Shell(args) => cmd_shell(args),
     }
 }
@@ -895,6 +923,152 @@ fn cmd_import(mut cfg: DbConfig, args: ImportArgs) -> Result<()> {
     );
 
     Ok(())
+}
+
+fn cmd_import_history(cfg: DbConfig, args: ImportHistoryArgs) -> Result<()> {
+    let mut conn = open_db(&cfg)?;
+    ensure_hash_index(&conn)?;
+
+    let pwd = args.pwd.clone().or_else(|| {
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+    });
+    let pwd = pwd.unwrap_or_else(|| "/".to_string());
+
+    let entries = if let Some(path) = args.bash.as_ref() {
+        read_bash_history(path)?
+    } else if let Some(path) = args.zsh.as_ref() {
+        read_zsh_history(path)?
+    } else {
+        anyhow::bail!("one of --bash or --zsh is required");
+    };
+
+    let now_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    // Assign synthetic sequential timestamps for entries that don't have an epoch.
+    // Strategy: preserve ordering by assigning a stable increasing sequence ending at now.
+    let missing = entries.iter().filter(|e| e.epoch.is_none()).count() as i64;
+    let mut next_synth_epoch = now_epoch - missing;
+
+    let mut considered = 0u64;
+    let mut inserted = 0u64;
+
+    for e in entries {
+        let epoch = match e.epoch {
+            Some(v) => v,
+            None => {
+                next_synth_epoch += 1;
+                next_synth_epoch
+            }
+        };
+
+        let row = HistoryRow {
+            hist_id: None,
+            cmd: e.cmd,
+            epoch,
+            ppid: args.ppid,
+            pwd: pwd.clone(),
+            salt: args.salt,
+        };
+        considered += 1;
+
+        // Dedup using history_hash
+        let hash = crate::db::row_hash(&row);
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM history_hash WHERE hash=?1)",
+            rusqlite::params![hash],
+            |r| r.get::<_, i64>(0),
+        )? == 1;
+
+        if exists {
+            continue;
+        }
+
+        // insert_history also populates history_hash.
+        insert_history(&mut conn, &row)?;
+        inserted += 1;
+    }
+
+    eprintln!("import-history: considered {considered}, inserted {inserted}");
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct HistoryEntry {
+    epoch: Option<i64>,
+    cmd: String,
+}
+
+fn read_bash_history(path: &std::path::Path) -> Result<Vec<HistoryEntry>> {
+    let text = std::fs::read_to_string(path)?;
+    let mut out = Vec::new();
+
+    // Bash history file is typically one command per line.
+    // If timestamps are enabled, it uses lines like:
+    //   #1700000000
+    //   echo hi
+    // We support both.
+    let mut pending_epoch: Option<i64> = None;
+    for line in text.lines() {
+        let line = line.trim_end();
+        if line.is_empty() {
+            continue;
+        }
+
+        if let Some(rest) = line.strip_prefix('#')
+            && let Ok(v) = rest.trim().parse::<i64>()
+        {
+            pending_epoch = Some(v);
+            continue;
+        }
+
+        out.push(HistoryEntry {
+            epoch: pending_epoch.take(),
+            cmd: line.to_string(),
+        });
+    }
+
+    Ok(out)
+}
+
+fn read_zsh_history(path: &std::path::Path) -> Result<Vec<HistoryEntry>> {
+    let text = std::fs::read_to_string(path)?;
+    let mut out = Vec::new();
+
+    for line in text.lines() {
+        let line = line.trim_end();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Extended history format:
+        //   : 1700000000:0;cmd...
+        if let Some(rest) = line.strip_prefix(": ")
+            && let Some((epoch_part, cmd_part)) = rest.split_once(';')
+        {
+            // epoch_part = "1700000000:0" (duration after second colon)
+            let epoch_str = epoch_part.split(':').next().unwrap_or("");
+            if let Ok(epoch) = epoch_str.parse::<i64>() {
+                out.push(HistoryEntry {
+                    epoch: Some(epoch),
+                    cmd: cmd_part.to_string(),
+                });
+                continue;
+            }
+        }
+
+        // Fallback: treat as a raw command without a timestamp.
+        out.push(HistoryEntry {
+            epoch: None,
+            cmd: line.to_string(),
+        });
+    }
+
+    Ok(out)
 }
 
 fn cmd_shell(args: ShellArgs) -> Result<()> {

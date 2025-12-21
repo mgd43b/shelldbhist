@@ -969,3 +969,108 @@ ignore_exact = ["ls"]
         .success()
         .stdout(predicate::str::contains("| ls"));
 }
+
+#[test]
+fn import_history_bash_assigns_synthetic_timestamps_and_dedups() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    let db = home.join("test.sqlite");
+    let hist = home.join("bash_history");
+
+    // No timestamps in bash history; importer should create synthetic epochs.
+    std::fs::write(&hist, "echo one\necho two\n").unwrap();
+
+    // Import twice; second should insert 0 due to dedup.
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "import-history",
+            "--bash",
+            hist.to_string_lossy().as_ref(),
+            "--pwd",
+            "/tmp",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("inserted 2"));
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "import-history",
+            "--bash",
+            hist.to_string_lossy().as_ref(),
+            "--pwd",
+            "/tmp",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("inserted 0"));
+
+    // Should have both commands present.
+    let out = sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.contains("echo one"));
+    assert!(out.contains("echo two"));
+}
+
+#[test]
+fn import_history_zsh_parses_extended_history_format() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    let db = home.join("test.sqlite");
+    let hist = home.join("zsh_history");
+
+    // Zsh extended history line format: ": <epoch>:<duration>;<command>"
+    std::fs::write(&hist, ": 1700000000:0;echo zsh\n").unwrap();
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "import-history",
+            "--zsh",
+            hist.to_string_lossy().as_ref(),
+            "--pwd",
+            "/tmp",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("inserted 1"));
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("echo zsh"));
+}

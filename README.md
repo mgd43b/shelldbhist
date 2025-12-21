@@ -166,6 +166,23 @@ sdbh import --from ~/.dbhist --from /path/other.db
 Note: Some older/hand-edited dbhist databases may contain corrupted rows where numeric
 columns contain TEXT. `sdbh import` will **skip** those rows and print how many it skipped.
 
+### Import from shell history files
+Import from plain shell history files into the SQLite DB (deduplicated via `history_hash`).
+
+Bash:
+
+```bash
+sdbh import-history --bash ~/.bash_history --pwd "$PWD"
+```
+
+Zsh (extended history format):
+
+```bash
+sdbh import-history --zsh ~/.zsh_history --pwd "$PWD"
+```
+
+If a history file doesn’t include timestamps (common for bash), `sdbh` assigns **synthetic sequential timestamps** to preserve ordering.
+
 ## Notes / Caveats
 - For bash hook mode, `HISTTIMEFORMAT="%s "` is required so `history 1` includes an epoch timestamp.
 - Intercept mode is more invasive; it can capture internal shell commands and may need additional filtering.
