@@ -377,6 +377,10 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Doctor(args) => cmd_doctor(cfg, args),
         Commands::Db(args) => cmd_db(cfg, args),
         Commands::Shell(args) => cmd_shell(args),
+        Commands::Version => {
+            println!("sdbh {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
     }
 }
 
