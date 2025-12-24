@@ -6,7 +6,7 @@ repository = "https://github.com/mgd43b/shelldbhist"
 license = "MIT"
 
 [package.metadata.dist]
-allow-dirty = true
+allow-dirty = ["*"]
 
 [dependencies]
 anyhow = "1.0.100"
