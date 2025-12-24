@@ -1262,3 +1262,186 @@ fn doctor_detects_hook_via_prompt_command_env() {
                 .and(predicate::str::contains("contains __sdbh_prompt")),
         );
 }
+
+#[test]
+fn db_health_checks_database_integrity_and_indexes() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // First create some data to ensure database is initialized
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "db", "health"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Database integrity check passed"))
+        .stdout(predicate::str::contains("Rows:"))
+        .stdout(predicate::str::contains("Size:"))
+        .stdout(predicate::str::contains("Fragmentation:"))
+        .stdout(predicate::str::contains("All performance indexes present"));
+}
+
+#[test]
+fn doctor_warns_about_missing_indexes() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Create database without indexes by directly manipulating SQLite
+    {
+        let conn = conn(&db);
+        conn.execute_batch(
+            r#"
+            CREATE TABLE history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              hist_id INTEGER,
+              cmd TEXT,
+              epoch INTEGER,
+              ppid INTEGER,
+              pwd TEXT,
+              salt INTEGER
+            );
+            CREATE TABLE meta (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            );
+            CREATE TABLE history_hash (
+              hash TEXT PRIMARY KEY,
+              history_id INTEGER
+            );
+            INSERT INTO meta(key,value) VALUES('schema_version','1');
+            "#,
+        )
+        .unwrap();
+    }
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "doctor",
+            "--no-spawn",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("db.indexes"))
+        .stdout(predicate::str::contains("Missing performance indexes"))
+        .stdout(predicate::str::contains("run 'sdbh db optimize'"));
+}
+
+#[test]
+fn db_optimize_creates_missing_indexes() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Create database without indexes
+    {
+        let conn = conn(&db);
+        conn.execute_batch(
+            r#"
+            CREATE TABLE history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              hist_id INTEGER,
+              cmd TEXT,
+              epoch INTEGER,
+              ppid INTEGER,
+              pwd TEXT,
+              salt INTEGER
+            );
+            CREATE TABLE meta (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            );
+            CREATE TABLE history_hash (
+              hash TEXT PRIMARY KEY,
+              history_id INTEGER
+            );
+            INSERT INTO meta(key,value) VALUES('schema_version','1');
+            "#,
+        )
+        .unwrap();
+    }
+
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "db", "optimize"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Optimizing database"))
+        .stdout(predicate::str::contains("Ensured all indexes exist"))
+        .stdout(predicate::str::contains("Reindexed database"))
+        .stdout(predicate::str::contains("Vacuumed database"))
+        .stdout(predicate::str::contains("Database optimization complete"));
+
+    // Verify indexes were created
+    {
+        let conn = conn(&db);
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'")
+            .unwrap();
+        let indexes: Vec<String> = stmt
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert!(indexes.contains(&"idx_history_epoch".to_string()));
+        assert!(indexes.contains(&"idx_history_session".to_string()));
+        assert!(indexes.contains(&"idx_history_pwd".to_string()));
+        assert!(indexes.contains(&"idx_history_hash".to_string()));
+    }
+}
+
+#[test]
+fn db_stats_shows_database_statistics() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Create some test data
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "db", "stats"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Database Statistics:"))
+        .stdout(predicate::str::contains("Total rows:"))
+        .stdout(predicate::str::contains("Database size:"))
+        .stdout(predicate::str::contains("Page count:"))
+        .stdout(predicate::str::contains("Page size:"))
+        .stdout(predicate::str::contains("Indexes:"))
+        .stdout(predicate::str::contains("idx_history_epoch"));
+}

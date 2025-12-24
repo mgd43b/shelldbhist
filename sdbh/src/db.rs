@@ -82,9 +82,22 @@ pub fn row_hash(row: &HistoryRow) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn ensure_hash_index(conn: &Connection) -> Result<()> {
-    conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_history_epoch ON history(epoch);")?;
+pub fn ensure_indexes(conn: &Connection) -> Result<()> {
+    // Performance indexes for common query patterns
+    conn.execute_batch(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_history_epoch ON history(epoch);
+        CREATE INDEX IF NOT EXISTS idx_history_session ON history(salt, ppid);
+        CREATE INDEX IF NOT EXISTS idx_history_pwd ON history(pwd);
+        CREATE INDEX IF NOT EXISTS idx_history_hash ON history_hash(hash);
+        "#,
+    )?;
     Ok(())
+}
+
+// Keep the old function for backward compatibility
+pub fn ensure_hash_index(conn: &Connection) -> Result<()> {
+    ensure_indexes(conn)
 }
 
 pub fn import_from_db(conn: &mut Connection, from_path: &std::path::Path) -> Result<(u64, u64)> {
