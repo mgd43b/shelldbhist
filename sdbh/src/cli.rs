@@ -1533,9 +1533,8 @@ fn cmd_db_schema(cfg: DbConfig) -> Result<()> {
 
     // Tables
     println!("\nTables:");
-    let mut stmt = conn.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")?;
     let tables = stmt.query_map([], |r| r.get::<_, String>(0))?;
     for table in tables {
         let table_name = table?;
@@ -1554,9 +1553,17 @@ fn cmd_db_schema(cfg: DbConfig) -> Result<()> {
         for column in columns {
             let (name, type_, notnull, pk) = column?;
             let mut flags = Vec::new();
-            if pk == 1 { flags.push("PRIMARY KEY"); }
-            if notnull == 1 { flags.push("NOT NULL"); }
-            let flags_str = if flags.is_empty() { String::new() } else { format!(" ({})", flags.join(", ")) };
+            if pk == 1 {
+                flags.push("PRIMARY KEY");
+            }
+            if notnull == 1 {
+                flags.push("NOT NULL");
+            }
+            let flags_str = if flags.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", flags.join(", "))
+            };
             println!("    {} {}{}", name, type_, flags_str);
         }
     }
