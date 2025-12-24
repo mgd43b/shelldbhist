@@ -88,10 +88,24 @@ jobs:
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             tag="${{ github.ref_name }}"
           elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            # If Release Please triggered us, derive the tag from the release-please manifest.
-            # This repo uses a single releasable unit named "sdbh".
-            version=$(jq -r '.sdbh' .release-please-manifest.json)
-            tag="v${version}"
+            # If Release Please triggered us, only publish when this workflow_run corresponds
+            # to an actual release PR merge.
+            #
+            # We define that as: the triggering commit SHA has a SemVer-ish tag (vX.Y.Z*)
+            # pointing at it.
+            sha="${{ github.event.workflow_run.head_sha }}"
+            echo "workflow_run head_sha=$sha"
+
+            # Find a tag that points at this SHA.
+            # Use the API so we don't need the tag in our local clone.
+            tag=$(gh api "repos/${{ github.repository }}/git/matching-refs/tags/v" --paginate \
+              | jq -r --arg sha "$sha" '.[] | select(.object.sha==$sha) | .ref | sub("refs/tags/"; "")' \
+              | head -n 1)
+
+            if [[ -z "$tag" ]]; then
+              echo "No v* tag found pointing at $sha; this was not a release PR merge. Skipping publish." >&2
+              publishing=false
+            fi
           fi
 
           if [[ -z "$tag" ]]; then
