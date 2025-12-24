@@ -2,10 +2,6 @@
 members = ["sdbh"]
 resolver = "2"
 
-# Allow manually modified workflow files for cargo-dist
-[workspace.metadata.dist]
-allow-dirty = true
-
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
