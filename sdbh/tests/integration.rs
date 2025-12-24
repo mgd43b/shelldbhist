@@ -1452,10 +1452,7 @@ fn search_respects_session_filter() {
     let db = tmp.path().join("test.sqlite");
 
     // Insert commands in two different sessions
-    let sessions = [
-        ("session1", 42i64, 100i64),
-        ("session2", 43i64, 101i64),
-    ];
+    let sessions = [("session1", 42i64, 100i64), ("session2", 43i64, 101i64)];
 
     for (cmd_suffix, salt, ppid) in sessions {
         sdbh_cmd()
