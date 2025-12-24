@@ -1445,3 +1445,55 @@ fn db_stats_shows_database_statistics() {
         .stdout(predicate::str::contains("Indexes:"))
         .stdout(predicate::str::contains("idx_history_epoch"));
 }
+
+#[test]
+fn search_respects_session_filter() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Insert commands in two different sessions
+    let sessions = [
+        ("session1", 42i64, 100i64),
+        ("session2", 43i64, 101i64),
+    ];
+
+    for (cmd_suffix, salt, ppid) in sessions {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                &format!("echo {}", cmd_suffix),
+                "--epoch",
+                "1700000000",
+                "--ppid",
+                &ppid.to_string(),
+                "--pwd",
+                "/tmp",
+                "--salt",
+                &salt.to_string(),
+            ])
+            .assert()
+            .success();
+    }
+
+    // Search with session filter should only show one command
+    sdbh_cmd()
+        .env("SDBH_SALT", "42")
+        .env("SDBH_PPID", "100")
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "search",
+            "echo",
+            "--all",
+            "--session",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("session1"))
+        .stdout(predicate::str::contains("session2").not());
+}
