@@ -50,6 +50,9 @@ pub enum Commands {
 
     /// Print shell integration snippets
     Shell(ShellArgs),
+
+    /// Show version information
+    Version,
 }
 
 #[derive(Parser, Debug)]
