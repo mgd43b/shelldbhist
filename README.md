@@ -7,6 +7,7 @@ It’s inspired by `dbhist.sh`, but implemented as a portable Rust CLI backed by
 - Local SQLite history database (`~/.sdbh.sqlite` by default)
 - Fast search (substring), raw history listing, grouped summaries
 - Stats (top commands, by-directory, daily buckets)
+- Database health monitoring and performance optimization
 - Import/merge from existing `dbhist.sh` SQLite databases
 - Import from shell history files (`.bash_history`, `.zsh_history`)
 
