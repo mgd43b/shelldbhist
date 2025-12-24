@@ -45,6 +45,9 @@ pub enum Commands {
     /// Diagnose shell integration / DB setup
     Doctor(DoctorArgs),
 
+    /// Database operations
+    Db(DbArgs),
+
     /// Print shell integration snippets
     Shell(ShellArgs),
 }
@@ -309,6 +312,22 @@ pub struct ImportHistoryArgs {
 }
 
 #[derive(Parser, Debug)]
+pub struct DbArgs {
+    #[command(subcommand)]
+    pub command: DbCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DbCommand {
+    /// Check database health and statistics
+    Health,
+    /// Optimize database (rebuild indexes, vacuum)
+    Optimize,
+    /// Show database statistics
+    Stats,
+}
+
+#[derive(Parser, Debug)]
 pub struct DoctorArgs {
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     pub format: OutputFormat,
@@ -351,6 +370,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Import(args) => cmd_import(cfg, args),
         Commands::ImportHistory(args) => cmd_import_history(cfg, args),
         Commands::Doctor(args) => cmd_doctor(cfg, args),
+        Commands::Db(args) => cmd_db(cfg, args),
         Commands::Shell(args) => cmd_shell(args),
     }
 }
@@ -1099,6 +1119,135 @@ fn cmd_doctor(cfg: DbConfig, args: DoctorArgs) -> Result<()> {
                     "db opened but write test failed".to_string(),
                 ));
             }
+
+            // Database integrity check
+            let integrity_ok = conn
+                .query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))
+                .map(|result| result == "ok")
+                .unwrap_or(false);
+
+            if integrity_ok {
+                checks.push(DoctorCheck::ok(
+                    "db.integrity",
+                    "Database integrity check passed".to_string(),
+                ));
+            } else {
+                checks.push(DoctorCheck::fail(
+                    "db.integrity",
+                    "Database integrity check failed".to_string(),
+                ));
+            }
+
+            // Database statistics and health
+            let page_count: i64 = conn
+                .query_row("PRAGMA page_count", [], |r| r.get(0))
+                .unwrap_or(0);
+            let freelist_count: i64 = conn
+                .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+                .unwrap_or(0);
+            let page_size: i64 = conn
+                .query_row("PRAGMA page_size", [], |r| r.get(0))
+                .unwrap_or(4096);
+            let _row_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))
+                .unwrap_or(0);
+
+            let db_size_mb = (page_count * page_size) as f64 / 1_000_000.0;
+            let free_space_mb = (freelist_count * page_size) as f64 / 1_000_000.0;
+            let fragmentation_ratio = if page_count > 0 {
+                freelist_count as f64 / page_count as f64
+            } else {
+                0.0
+            };
+
+            // Size assessment
+            if db_size_mb > 100.0 {
+                checks.push(DoctorCheck::info(
+                    "db.size",
+                    format!("Large database ({:.1} MB)", db_size_mb),
+                ));
+            }
+
+            // Fragmentation assessment
+            if fragmentation_ratio > 0.2 {
+                checks.push(DoctorCheck::warn(
+                    "db.fragmentation",
+                    format!(
+                        "High fragmentation ({:.1}%, {:.1} MB free) - consider VACUUM",
+                        fragmentation_ratio * 100.0,
+                        free_space_mb
+                    ),
+                ));
+            } else if fragmentation_ratio > 0.1 {
+                checks.push(DoctorCheck::info(
+                    "db.fragmentation",
+                    format!(
+                        "Moderate fragmentation ({:.1}%, {:.1} MB free)",
+                        fragmentation_ratio * 100.0,
+                        free_space_mb
+                    ),
+                ));
+            }
+
+            // VACUUM suggestion
+            if free_space_mb > 10.0 {
+                checks.push(DoctorCheck::info(
+                    "db.optimize",
+                    format!(
+                        "{:.1} MB of free space available - VACUUM could reduce size",
+                        free_space_mb
+                    ),
+                ));
+            }
+
+            // Check for missing indexes
+            let mut missing_indexes = Vec::new();
+            let indexes = [
+                (
+                    "idx_history_epoch",
+                    "CREATE INDEX IF NOT EXISTS idx_history_epoch ON history(epoch)",
+                ),
+                (
+                    "idx_history_session",
+                    "CREATE INDEX IF NOT EXISTS idx_history_session ON history(salt, ppid)",
+                ),
+                (
+                    "idx_history_pwd",
+                    "CREATE INDEX IF NOT EXISTS idx_history_pwd ON history(pwd)",
+                ),
+                (
+                    "idx_history_hash",
+                    "CREATE INDEX IF NOT EXISTS idx_history_hash ON history_hash(hash)",
+                ),
+            ];
+
+            for (name, _) in &indexes {
+                let exists: bool = conn
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name=?1)",
+                        [name],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(false);
+                if !exists {
+                    missing_indexes.push(*name);
+                }
+            }
+
+            if !missing_indexes.is_empty() {
+                checks.push(DoctorCheck::warn(
+                    "db.indexes",
+                    format!(
+                        "Missing performance indexes: {} (run 'sdbh db optimize')",
+                        missing_indexes.join(", ")
+                    ),
+                ));
+            } else {
+                checks.push(DoctorCheck::ok(
+                    "db.indexes",
+                    "All performance indexes present".to_string(),
+                ));
+            }
         }
         Err(e) => {
             checks.push(DoctorCheck::fail(
@@ -1225,6 +1374,151 @@ fn cmd_doctor(cfg: DbConfig, args: DoctorArgs) -> Result<()> {
     }
 
     output_doctor(&checks, args.format);
+    Ok(())
+}
+
+fn cmd_db(cfg: DbConfig, args: DbArgs) -> Result<()> {
+    match args.command {
+        DbCommand::Health => cmd_db_health(cfg),
+        DbCommand::Optimize => cmd_db_optimize(cfg),
+        DbCommand::Stats => cmd_db_stats(cfg),
+    }
+}
+
+fn cmd_db_health(cfg: DbConfig) -> Result<()> {
+    let conn = open_db(&cfg)?;
+
+    // Database integrity check
+    let integrity_ok = conn
+        .query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))
+        .map(|result| result == "ok")
+        .unwrap_or(false);
+
+    if integrity_ok {
+        println!("✓ Database integrity check passed");
+    } else {
+        println!("✗ Database integrity check failed");
+    }
+
+    // Get database statistics
+    let page_count: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
+    let freelist_count: i64 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+    let page_size: i64 = conn.query_row("PRAGMA page_size", [], |r| r.get(0))?;
+    let row_count: i64 = conn.query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))?;
+
+    let db_size_mb = (page_count * page_size) as f64 / 1_000_000.0;
+    let free_space_mb = (freelist_count * page_size) as f64 / 1_000_000.0;
+    let fragmentation_ratio = if page_count > 0 {
+        freelist_count as f64 / page_count as f64
+    } else {
+        0.0
+    };
+
+    println!("Database Statistics:");
+    println!("  Rows: {}", row_count);
+    println!("  Size: {:.1} MB", db_size_mb);
+    println!("  Free space: {:.1} MB", free_space_mb);
+    println!("  Fragmentation: {:.1}%", fragmentation_ratio * 100.0);
+
+    // Check for missing indexes
+    let mut missing_indexes = Vec::new();
+    let indexes = [
+        (
+            "idx_history_epoch",
+            "CREATE INDEX IF NOT EXISTS idx_history_epoch ON history(epoch)",
+        ),
+        (
+            "idx_history_session",
+            "CREATE INDEX IF NOT EXISTS idx_history_session ON history(salt, ppid)",
+        ),
+        (
+            "idx_history_pwd",
+            "CREATE INDEX IF NOT EXISTS idx_history_pwd ON history(pwd)",
+        ),
+        (
+            "idx_history_hash",
+            "CREATE INDEX IF NOT EXISTS idx_history_hash ON history_hash(hash)",
+        ),
+    ];
+
+    for (name, _sql) in &indexes {
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name=?1)",
+            [name],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            missing_indexes.push(*name);
+        }
+    }
+
+    if missing_indexes.is_empty() {
+        println!("✓ All performance indexes present");
+    } else {
+        println!("⚠ Missing indexes (run 'sdbh db optimize' to create):");
+        for index in &missing_indexes {
+            println!("  - {}", index);
+        }
+    }
+
+    // VACUUM suggestions
+    if free_space_mb > 10.0 {
+        println!(
+            "💡 Consider running VACUUM ({} MB reclaimable)",
+            free_space_mb
+        );
+    }
+
+    Ok(())
+}
+
+fn cmd_db_optimize(cfg: DbConfig) -> Result<()> {
+    let conn = open_db(&cfg)?;
+
+    println!("Optimizing database...");
+
+    // Ensure all indexes exist
+    crate::db::ensure_indexes(&conn)?;
+    println!("✓ Ensured all indexes exist");
+
+    // Rebuild indexes (REINDEX)
+    conn.execute_batch("REINDEX;")?;
+    println!("✓ Reindexed database");
+
+    // Vacuum to reclaim space
+    conn.execute_batch("VACUUM;")?;
+    println!("✓ Vacuumed database");
+
+    println!("Database optimization complete!");
+    Ok(())
+}
+
+fn cmd_db_stats(cfg: DbConfig) -> Result<()> {
+    let conn = open_db(&cfg)?;
+
+    // Basic statistics
+    let row_count: i64 = conn.query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))?;
+    let page_count: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
+    let page_size: i64 = conn.query_row("PRAGMA page_size", [], |r| r.get(0))?;
+
+    let db_size_mb = (page_count * page_size) as f64 / 1_000_000.0;
+
+    println!("Database Statistics:");
+    println!("  Total rows: {}", row_count);
+    println!("  Database size: {:.1} MB", db_size_mb);
+    println!("  Page count: {}", page_count);
+    println!("  Page size: {} bytes", page_size);
+
+    // Index information
+    println!("\nIndexes:");
+    let mut stmt =
+        conn.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    for row in rows {
+        let name = row?;
+        println!("  {}", name);
+    }
+
     Ok(())
 }
 
