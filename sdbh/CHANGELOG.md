@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/mgd43b/shelldbhist/compare/v0.3.0...v0.4.0) (2025-12-24)
+
+
+### Features
+
+* improve sdbh list command ([#13](https://github.com/mgd43b/shelldbhist/issues/13)) ([6070502](https://github.com/mgd43b/shelldbhist/commit/607050279c0a4386b6bc588c05009b2f5478ae1b))
+
 ## [0.3.0](https://github.com/mgd43b/shelldbhist/compare/v0.2.1...v0.3.0) (2025-12-21)
 
 
