@@ -325,6 +325,8 @@ pub enum DbCommand {
     Optimize,
     /// Show database statistics
     Stats,
+    /// Show database schema information
+    Schema,
 }
 
 #[derive(Parser, Debug)]
@@ -1382,6 +1384,7 @@ fn cmd_db(cfg: DbConfig, args: DbArgs) -> Result<()> {
         DbCommand::Health => cmd_db_health(cfg),
         DbCommand::Optimize => cmd_db_optimize(cfg),
         DbCommand::Stats => cmd_db_stats(cfg),
+        DbCommand::Schema => cmd_db_schema(cfg),
     }
 }
 
@@ -1517,6 +1520,62 @@ fn cmd_db_stats(cfg: DbConfig) -> Result<()> {
     for row in rows {
         let name = row?;
         println!("  {}", name);
+    }
+
+    Ok(())
+}
+
+fn cmd_db_schema(cfg: DbConfig) -> Result<()> {
+    let conn = open_db(&cfg)?;
+
+    println!("Database Schema:");
+    println!("================");
+
+    // Tables
+    println!("\nTables:");
+    let mut stmt = conn.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    )?;
+    let tables = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    for table in tables {
+        let table_name = table?;
+        println!("  {}", table_name);
+
+        // Show table schema
+        let mut schema_stmt = conn.prepare(&format!("PRAGMA table_info({})", table_name))?;
+        let columns = schema_stmt.query_map([], |r| {
+            let name: String = r.get(1)?;
+            let type_: String = r.get(2)?;
+            let notnull: i64 = r.get(3)?;
+            let pk: i64 = r.get(5)?;
+            Ok((name, type_, notnull, pk))
+        })?;
+
+        for column in columns {
+            let (name, type_, notnull, pk) = column?;
+            let mut flags = Vec::new();
+            if pk == 1 { flags.push("PRIMARY KEY"); }
+            if notnull == 1 { flags.push("NOT NULL"); }
+            let flags_str = if flags.is_empty() { String::new() } else { format!(" ({})", flags.join(", ")) };
+            println!("    {} {}{}", name, type_, flags_str);
+        }
+    }
+
+    // Indexes
+    println!("\nIndexes:");
+    let mut stmt = conn.prepare(
+        "SELECT name, tbl_name, sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name"
+    )?;
+    let indexes = stmt.query_map([], |r| {
+        let name: String = r.get(0)?;
+        let table: String = r.get(1)?;
+        let sql: String = r.get(2)?;
+        Ok((name, table, sql))
+    })?;
+
+    for index in indexes {
+        let (name, table, sql) = index?;
+        println!("  {} on {}: {}", name, table, sql);
     }
 
     Ok(())
