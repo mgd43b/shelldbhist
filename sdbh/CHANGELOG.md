@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/mgd43b/shelldbhist/compare/v0.5.0...v0.6.0) (2025-12-24)
+
+
+### Features
+
+* add database schema inspection command ([bfc1294](https://github.com/mgd43b/shelldbhist/commit/bfc1294de1b7b1bd9f8bd7c866e32a4846f46b46))
+
 ## [0.5.0](https://github.com/mgd43b/shelldbhist/compare/v0.4.0...v0.5.0) (2025-12-24)
 
 
