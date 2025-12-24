@@ -39,6 +39,9 @@ permissions:
 # If there's a prerelease-style suffix to the version, then the release(s)
 # will be marked as a prerelease.
 on:
+  workflow_run:
+    workflows: ["Release Please"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -56,9 +59,9 @@ jobs:
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
-      tag: ${{ !github.event.pull_request && (github.event.inputs.tag || github.ref_name) || '' }}
-      tag-flag: ${{ !github.event.pull_request && format('--tag={0}', (github.event.inputs.tag || github.ref_name)) || '' }}
-      publishing: ${{ !github.event.pull_request }}
+      tag: ${{ steps.set-tag.outputs.tag }}
+      tag-flag: ${{ steps.set-tag.outputs.tag_flag }}
+      publishing: ${{ steps.set-tag.outputs.publishing }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -66,6 +69,43 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+
+      - id: set-tag
+        name: Resolve tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Default: don't publish on pull_request runs
+          publishing=true
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            publishing=false
+          fi
+
+          tag=""
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ github.event.inputs.tag }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            tag="${{ github.ref_name }}"
+          elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            # If Release Please triggered us, derive the tag from the release-please manifest.
+            # This repo uses a single releasable unit named "sdbh".
+            version=$(jq -r '.sdbh' .release-please-manifest.json)
+            tag="v${version}"
+          fi
+
+          if [[ -z "$tag" ]]; then
+            echo "No tag could be resolved for event '${{ github.event_name }}'" >&2
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "tag_flag=" >> "$GITHUB_OUTPUT"
+            echo "publishing=$publishing" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "Resolved tag: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "tag_flag=--tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publishing=$publishing" >> "$GITHUB_OUTPUT"
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
@@ -83,7 +123,7 @@ jobs:
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
         run: |
-          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', (github.event.inputs.tag || github.ref_name))) || 'plan' }} --output-format=json > plan-dist-manifest.json
+          dist ${{ (steps.set-tag.outputs.publishing == 'true' && format('host --steps=create {0}', steps.set-tag.outputs.tag_flag)) || 'plan' }} --output-format=json > plan-dist-manifest.json
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
