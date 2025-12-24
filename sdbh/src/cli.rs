@@ -86,8 +86,13 @@ pub struct SummaryArgs {
     #[arg(long)]
     pub starts: bool,
 
+    /// Show all entries (no limit)
     #[arg(long)]
     pub all: bool,
+
+    /// Filter to current session only
+    #[arg(long)]
+    pub session: bool,
 
     #[arg(long)]
     pub pwd: bool,
@@ -135,8 +140,13 @@ pub struct ListArgs {
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     pub format: OutputFormat,
 
+    /// Show all entries (no limit)
     #[arg(long)]
     pub all: bool,
+
+    /// Filter to current session only
+    #[arg(long)]
+    pub session: bool,
 
     /// Override the working directory used by --here/--under (useful for tests)
     #[arg(long)]
@@ -160,8 +170,13 @@ pub struct SearchArgs {
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     pub format: OutputFormat,
 
+    /// Show all entries (no limit)
     #[arg(long)]
     pub all: bool,
+
+    /// Filter to current session only
+    #[arg(long)]
+    pub session: bool,
 
     /// Only include rows with epoch >= since_epoch.
     #[arg(long, conflicts_with = "days")]
@@ -184,8 +199,13 @@ pub struct SearchArgs {
 
 #[derive(Parser, Debug)]
 pub struct ExportArgs {
+    /// Show all entries (no limit)
     #[arg(long)]
     pub all: bool,
+
+    /// Filter to current session only
+    #[arg(long)]
+    pub session: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -214,8 +234,13 @@ pub struct StatsTopArgs {
     #[arg(long, default_value_t = 50)]
     pub limit: u32,
 
+    /// Show all entries (no limit)
     #[arg(long)]
     pub all: bool,
+
+    /// Filter to current session only
+    #[arg(long)]
+    pub session: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -226,8 +251,13 @@ pub struct StatsByPwdArgs {
     #[arg(long, default_value_t = 50)]
     pub limit: u32,
 
+    /// Show all entries (no limit)
     #[arg(long)]
     pub all: bool,
+
+    /// Filter to current session only
+    #[arg(long)]
+    pub session: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -235,8 +265,13 @@ pub struct StatsDailyArgs {
     #[arg(long, default_value_t = 30)]
     pub days: u32,
 
+    /// Show all entries (no limit)
     #[arg(long)]
     pub all: bool,
+
+    /// Filter to current session only
+    #[arg(long)]
+    pub session: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -462,15 +497,15 @@ fn is_builtin_noisy_command(cmd: &str) -> bool {
     false
 }
 
-fn session_filter(all: bool) -> Option<(i64, i64)> {
-    if all {
-        None
-    } else {
-        // In hook mode, salt and ppid come from the current shell integration.
-        // For querying "current session" we read env vars set by the hook.
+fn session_filter(session_only: bool) -> Option<(i64, i64)> {
+    if session_only {
+        // Filter to current session only
         let salt = std::env::var("SDBH_SALT").ok()?.parse::<i64>().ok()?;
         let ppid = std::env::var("SDBH_PPID").ok()?.parse::<i64>().ok()?;
         Some((salt, ppid))
+    } else {
+        // No session filtering (show all sessions)
+        None
     }
 }
 
@@ -543,7 +578,7 @@ fn build_summary_sql(args: &SummaryArgs) -> Result<(String, Vec<String>)> {
 
     let mut sql = format!("{select} FROM history WHERE 1=1 ");
 
-    if let Some((salt, ppid)) = session_filter(args.all) {
+    if let Some((salt, ppid)) = session_filter(args.session) {
         sql.push_str("AND salt=? AND ppid=? ");
         bind.push(salt.to_string());
         bind.push(ppid.to_string());
@@ -578,7 +613,8 @@ fn build_summary_sql(args: &SummaryArgs) -> Result<(String, Vec<String>)> {
 
     sql.push_str("ORDER BY max(id) DESC ");
     sql.push_str("LIMIT ?");
-    bind.push(args.limit.to_string());
+    let limit = if args.all { u32::MAX } else { args.limit };
+    bind.push(limit.to_string());
 
     Ok((sql, bind))
 }
@@ -636,7 +672,7 @@ fn build_list_sql(args: &ListArgs) -> Result<(String, Vec<String>)> {
         "SELECT id, datetime(epoch, 'unixepoch', 'localtime') as dt, pwd, cmd, epoch FROM history WHERE 1=1 ",
     );
 
-    if let Some((salt, ppid)) = session_filter(args.all) {
+    if let Some((salt, ppid)) = session_filter(args.session) {
         sql.push_str("AND salt=? AND ppid=? ");
         bind.push(salt.to_string());
         bind.push(ppid.to_string());
@@ -657,9 +693,10 @@ fn build_list_sql(args: &ListArgs) -> Result<(String, Vec<String>)> {
         }
     }
 
-    sql.push_str("ORDER BY epoch DESC, id DESC ");
+    sql.push_str("ORDER BY epoch ASC, id ASC ");
     sql.push_str("LIMIT ? OFFSET ?");
-    bind.push(args.limit.to_string());
+    let limit = if args.all { u32::MAX } else { args.limit };
+    bind.push(limit.to_string());
     bind.push(args.offset.to_string());
 
     Ok((sql, bind))
@@ -736,7 +773,7 @@ fn build_search_sql(args: &SearchArgs) -> Result<(String, Vec<String>)> {
     // deterministic for ASCII (our common use case) and matches our tests.
     // Note: the query string is lowercased for binding below.
 
-    if let Some((salt, ppid)) = session_filter(args.all) {
+    if let Some((salt, ppid)) = session_filter(args.session) {
         sql.push_str("AND salt=? AND ppid=? ");
         bind.push(salt.to_string());
         bind.push(ppid.to_string());
@@ -761,7 +798,8 @@ fn build_search_sql(args: &SearchArgs) -> Result<(String, Vec<String>)> {
 
     sql.push_str("ORDER BY epoch DESC, id DESC ");
     sql.push_str("LIMIT ?");
-    bind.push(args.limit.to_string());
+    let limit = if args.all { u32::MAX } else { args.limit };
+    bind.push(limit.to_string());
 
     Ok((sql, bind))
 }
@@ -774,7 +812,7 @@ fn cmd_export(cfg: DbConfig, args: ExportArgs) -> Result<()> {
     let mut sql =
         String::from("SELECT id, hist_id, cmd, epoch, ppid, pwd, salt FROM history WHERE 1=1 ");
 
-    if let Some((salt, ppid)) = session_filter(args.all) {
+    if let Some((salt, ppid)) = session_filter(args.session) {
         sql.push_str("AND salt=? AND ppid=? ");
         bind.push(salt.to_string());
         bind.push(ppid.to_string());
@@ -871,7 +909,7 @@ fn build_stats_top_sql(args: &StatsTopArgs) -> Result<(String, Vec<String>)> {
     let mut bind: Vec<String> = vec![];
     let mut sql = String::from("SELECT count(*) as cnt, cmd FROM history WHERE 1=1 ");
 
-    if let Some((salt, ppid)) = session_filter(args.all) {
+    if let Some((salt, ppid)) = session_filter(args.session) {
         sql.push_str("AND salt=? AND ppid=? ");
         bind.push(salt.to_string());
         bind.push(ppid.to_string());
@@ -881,7 +919,8 @@ fn build_stats_top_sql(args: &StatsTopArgs) -> Result<(String, Vec<String>)> {
     bind.push(days_cutoff_epoch(args.days).to_string());
 
     sql.push_str("GROUP BY cmd ORDER BY cnt DESC, max(epoch) DESC LIMIT ?");
-    bind.push(args.limit.to_string());
+    let limit = if args.all { u32::MAX } else { args.limit };
+    bind.push(limit.to_string());
 
     Ok((sql, bind))
 }
@@ -890,7 +929,7 @@ fn build_stats_by_pwd_sql(args: &StatsByPwdArgs) -> Result<(String, Vec<String>)
     let mut bind: Vec<String> = vec![];
     let mut sql = String::from("SELECT count(*) as cnt, pwd, cmd FROM history WHERE 1=1 ");
 
-    if let Some((salt, ppid)) = session_filter(args.all) {
+    if let Some((salt, ppid)) = session_filter(args.session) {
         sql.push_str("AND salt=? AND ppid=? ");
         bind.push(salt.to_string());
         bind.push(ppid.to_string());
@@ -900,7 +939,8 @@ fn build_stats_by_pwd_sql(args: &StatsByPwdArgs) -> Result<(String, Vec<String>)
     bind.push(days_cutoff_epoch(args.days).to_string());
 
     sql.push_str("GROUP BY pwd, cmd ORDER BY cnt DESC, max(epoch) DESC LIMIT ?");
-    bind.push(args.limit.to_string());
+    let limit = if args.all { u32::MAX } else { args.limit };
+    bind.push(limit.to_string());
 
     Ok((sql, bind))
 }
@@ -911,7 +951,7 @@ fn build_stats_daily_sql(args: &StatsDailyArgs) -> Result<(String, Vec<String>)>
         "SELECT date(epoch, 'unixepoch', 'localtime') as day, count(*) as cnt FROM history WHERE 1=1 ",
     );
 
-    if let Some((salt, ppid)) = session_filter(args.all) {
+    if let Some((salt, ppid)) = session_filter(args.session) {
         sql.push_str("AND salt=? AND ppid=? ");
         bind.push(salt.to_string());
         bind.push(ppid.to_string());
@@ -1632,12 +1672,32 @@ mod tests {
     }
 
     #[test]
-    fn build_summary_sql_adds_limit_bind() {
+    fn build_summary_sql_with_all_unlimited() {
         let args = SummaryArgs {
             query: None,
             limit: 5,
             starts: false,
             all: true,
+            session: false,
+            pwd: false,
+            pwd_override: None,
+            here: false,
+            under: false,
+            verbose: false,
+        };
+        let (_sql, bind) = build_summary_sql(&args).unwrap();
+        // --all means unlimited, so limit should be u32::MAX
+        assert_eq!(bind.last().unwrap(), &u32::MAX.to_string());
+    }
+
+    #[test]
+    fn build_summary_sql_with_limit() {
+        let args = SummaryArgs {
+            query: None,
+            limit: 5,
+            starts: false,
+            all: false,
+            session: false,
             pwd: false,
             pwd_override: None,
             here: false,

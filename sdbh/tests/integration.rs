@@ -199,6 +199,72 @@ fn summary_groups_and_counts() {
 }
 
 #[test]
+fn list_shows_chronological_order_oldest_first() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Insert commands with different epochs (newest epoch first to test ordering)
+    let commands = vec![
+        ("echo newest", 1700000010),
+        ("echo middle", 1700000005),
+        ("echo oldest", 1700000000),
+    ];
+
+    for (cmd, epoch) in commands {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                cmd,
+                "--epoch",
+                &epoch.to_string(),
+                "--ppid",
+                "123",
+                "--pwd",
+                "/tmp",
+                "--salt",
+                "42",
+            ])
+            .assert()
+            .success();
+    }
+
+    let output = sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    // Should show oldest first: echo oldest, echo middle, echo newest
+    assert!(lines.iter().any(|line| line.contains("echo oldest")));
+    assert!(lines.iter().any(|line| line.contains("echo middle")));
+    assert!(lines.iter().any(|line| line.contains("echo newest")));
+
+    // Verify order by checking line order
+    let oldest_line = lines.iter().find(|line| line.contains("echo oldest")).unwrap();
+    let middle_line = lines.iter().find(|line| line.contains("echo middle")).unwrap();
+    let newest_line = lines.iter().find(|line| line.contains("echo newest")).unwrap();
+
+    let oldest_pos = lines.iter().position(|line| line == oldest_line).unwrap();
+    let middle_pos = lines.iter().position(|line| line == middle_line).unwrap();
+    let newest_pos = lines.iter().position(|line| line == newest_line).unwrap();
+
+    assert!(oldest_pos < middle_pos);
+    assert!(middle_pos < newest_pos);
+}
+
+#[test]
 fn list_under_filters_by_pwd_prefix_and_escapes_wildcards() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("test.sqlite");
