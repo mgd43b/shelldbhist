@@ -252,9 +252,18 @@ fn list_shows_chronological_order_oldest_first() {
     assert!(lines.iter().any(|line| line.contains("echo newest")));
 
     // Verify order by checking line order
-    let oldest_line = lines.iter().find(|line| line.contains("echo oldest")).unwrap();
-    let middle_line = lines.iter().find(|line| line.contains("echo middle")).unwrap();
-    let newest_line = lines.iter().find(|line| line.contains("echo newest")).unwrap();
+    let oldest_line = lines
+        .iter()
+        .find(|line| line.contains("echo oldest"))
+        .unwrap();
+    let middle_line = lines
+        .iter()
+        .find(|line| line.contains("echo middle"))
+        .unwrap();
+    let newest_line = lines
+        .iter()
+        .find(|line| line.contains("echo newest"))
+        .unwrap();
 
     let oldest_pos = lines.iter().position(|line| line == oldest_line).unwrap();
     let middle_pos = lines.iter().position(|line| line == middle_line).unwrap();
