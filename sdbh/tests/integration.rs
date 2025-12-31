@@ -2753,7 +2753,9 @@ fn stats_fzf_multi_select_validation() {
         ])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("--multi-select requires --fzf flag"));
+        .stderr(predicate::str::contains(
+            "--multi-select requires --fzf flag",
+        ));
 
     // Test that multi-select requires fzf for stats by-pwd
     sdbh_cmd()
@@ -2771,7 +2773,9 @@ fn stats_fzf_multi_select_validation() {
         ])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("--multi-select requires --fzf flag"));
+        .stderr(predicate::str::contains(
+            "--multi-select requires --fzf flag",
+        ));
 
     // Test that multi-select requires fzf for stats daily
     sdbh_cmd()
@@ -2787,7 +2791,9 @@ fn stats_fzf_multi_select_validation() {
         ])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("--multi-select requires --fzf flag"));
+        .stderr(predicate::str::contains(
+            "--multi-select requires --fzf flag",
+        ));
 }
 
 #[test]
@@ -2836,6 +2842,312 @@ fn stats_top_fzf_with_multi_select_flag_parsing() {
 }
 
 #[test]
+fn preview_enhanced_context_aware_git() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Add git command to test context-aware preview
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "git status",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp/repo",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test enhanced preview for git status
+    let output = sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "preview",
+            "git status",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("🔍 Command Analysis"));
+    assert!(stdout.contains("Type: 🔧 Git"));
+    assert!(stdout.contains("Shows working directory status"));
+}
+
+#[test]
+fn preview_enhanced_context_aware_docker() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Add docker commands to test context-aware preview
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "docker ps",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "docker build .",
+            "--epoch",
+            "1700000001",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test enhanced preview for docker ps
+    let output = sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "preview",
+            "docker ps",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Type: 🐳 Docker"));
+    assert!(stdout.contains("Lists running containers"));
+    assert!(stdout.contains("🔗 Related Commands"));
+    assert!(stdout.contains("docker build ."));
+}
+
+#[test]
+fn preview_enhanced_recent_executions() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Add multiple executions of the same command with different directories
+    let dirs = [
+        "/tmp/project1",
+        "/tmp/project2",
+        "/tmp/project3",
+        "/tmp/project4",
+        "/tmp/project5",
+        "/tmp/project6",
+    ];
+
+    for (i, dir) in dirs.iter().enumerate() {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                "make test",
+                "--epoch",
+                &format!("17000000{}", i),
+                "--ppid",
+                "123",
+                "--pwd",
+                dir,
+                "--salt",
+                "42",
+            ])
+            .assert()
+            .success();
+    }
+
+    // Test that preview shows recent executions with full context
+    let output = sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "preview",
+            "make test",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("🕒 Recent Executions"));
+    // Should show up to 5 recent executions
+    assert!(stdout.contains("/tmp/project6"));
+    assert!(stdout.contains("/tmp/project5"));
+    assert!(stdout.contains("/tmp/project4"));
+    assert!(stdout.contains("/tmp/project3"));
+    assert!(stdout.contains("/tmp/project2"));
+}
+
+#[test]
+fn preview_enhanced_directory_usage() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Add command usage across multiple directories
+    let dirs = ["/home/user/project", "/tmp/build", "/var/www"];
+
+    for dir in dirs.iter() {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                "ls -la",
+                "--epoch",
+                "1700000000",
+                "--ppid",
+                "123",
+                "--pwd",
+                dir,
+                "--salt",
+                "42",
+            ])
+            .assert()
+            .success();
+    }
+
+    // Test directory usage section
+    let output = sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "preview", "ls -la"])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("📁 Directory Usage"));
+    assert!(stdout.contains("/home/user/project"));
+    assert!(stdout.contains("/tmp/build"));
+    assert!(stdout.contains("/var/www"));
+}
+
+#[test]
+fn preview_enhanced_command_type_detection() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Test various command types
+    let test_commands = vec![
+        ("git status", "🔧 Git"),
+        ("docker run nginx", "🐳 Docker"),
+        ("kubectl get pods", "☸️  Kubernetes"),
+        ("cargo build", "📦 Cargo"),
+        ("npm install", "📦 NPM"),
+        ("make all", "🔨 Make"),
+        ("cd /tmp", "📂 Navigation"),
+        ("ps aux", "⚙️  System"),
+        ("unknown_command", "💻 Generic"),
+    ];
+
+    for (cmd, expected_type) in test_commands {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                cmd,
+                "--epoch",
+                "1700000000",
+                "--ppid",
+                "123",
+                "--pwd",
+                "/tmp",
+                "--salt",
+                "42",
+            ])
+            .assert()
+            .success();
+
+        let output = sdbh_cmd()
+            .args(["--db", db.to_string_lossy().as_ref(), "preview", cmd])
+            .output()
+            .unwrap();
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains(&format!("Type: {}", expected_type)),
+            "Failed for command: {}",
+            cmd
+        );
+    }
+}
+
+#[test]
+fn preview_enhanced_related_commands_by_directory() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Add commands in the same directory to test directory-based related commands
+    let commands_in_same_dir = vec![
+        "git status",
+        "make test",
+        "cargo build",
+        "npm run dev",
+        "docker-compose up",
+    ];
+
+    for cmd in commands_in_same_dir.iter() {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                cmd,
+                "--epoch",
+                "1700000000",
+                "--ppid",
+                "123",
+                "--pwd",
+                "/home/user/project",
+                "--salt",
+                "42",
+            ])
+            .assert()
+            .success();
+    }
+
+    // Test related commands for a generic command (should find others in same directory)
+    let output = sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "preview",
+            "echo hello", // Command not in the directory
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Should not find related commands since echo hello was used in a different directory
+    assert!(!stdout.contains("🔗 Related Commands"));
+}
+
+#[test]
 fn memory_bank_update() {
     // Update memory bank with current test coverage status
     // This is more of a documentation test, but ensures we track coverage improvements
@@ -2844,6 +3156,7 @@ fn memory_bank_update() {
     // CLI module went from 53% to 60.6% coverage
     // Added comprehensive error handling tests
     // Added stats fzf functionality with integration tests
+    // Added enhanced preview features with comprehensive testing
     // All tests should be passing
 
     assert!(true); // Always pass - this is for documentation

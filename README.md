@@ -286,6 +286,56 @@ sdbh doctor --format json
 
 `sdbh` integrates with [fzf](https://github.com/junegun/fzf) for interactive command selection. The killer feature is **replacing your shell's Ctrl+R history search** with sdbh's intelligent fuzzy search across your entire command history.
 
+### Enhanced Preview System
+
+`sdbh` provides a rich, context-aware preview system that transforms command selection from basic text matching into intelligent analysis:
+
+#### Command Analysis Preview
+When browsing commands with `--fzf`, the right-side preview pane shows detailed command intelligence:
+
+```bash
+# Example preview for "git status"
+🔍 Command Analysis
+Command: git status
+Type: 🔧 Git
+Total uses: 45
+First used: 2024-01-01 10:30:22
+Last used: 2024-12-01 14:30:22
+Unique directories: 3
+
+ℹ️ Shows working directory status and changes
+
+📁 Directory Usage:
+  /home/user/project
+  /tmp/build
+  /var/www
+
+🕒 Recent Executions:
+  1. 45 | 2024-12-01 14:30:22 | /home/user/project
+  2. 44 | 2024-11-30 09:15:11 | /tmp/build
+  3. 43 | 2024-11-29 16:45:33 | /var/www
+```
+
+#### Context-Aware Intelligence
+The preview system recognizes command types and provides specific information:
+
+- **🔧 Git**: Explains what `status`, `log`, `diff`, `branch`, etc. do
+- **🐳 Docker**: Describes `run`, `build`, `ps`, `exec`, `logs` functionality
+- **☸️ Kubernetes**: Explains `get`, `describe`, `logs`, `apply` operations
+- **📦 Cargo**: Details `build`, `test`, `check`, `fmt`, `clippy` purposes
+- **📦 NPM**: Describes `install`, `start`, `run`, `test`, `build` workflows
+- **🔨 Make**: Explains build targets and common operations
+
+#### Manual Preview Inspection
+You can also manually inspect any command's detailed analysis:
+
+```bash
+# Get full analysis for any command in your history
+sdbh preview "git status"
+sdbh preview "docker build ."
+sdbh preview "kubectl get pods"
+```
+
 ### Requirements
 - Install [fzf](https://github.com/junegun/fzf) (available via most package managers)
 
