@@ -274,6 +274,14 @@ pub struct StatsTopArgs {
     /// Filter to current session only
     #[arg(long)]
     pub session: bool,
+
+    /// Use fzf for interactive selection (outputs selected command to stdout)
+    #[arg(long)]
+    pub fzf: bool,
+
+    /// Allow selecting multiple commands with fzf (implies --fzf)
+    #[arg(long)]
+    pub multi_select: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -291,6 +299,14 @@ pub struct StatsByPwdArgs {
     /// Filter to current session only
     #[arg(long)]
     pub session: bool,
+
+    /// Use fzf for interactive selection (outputs selected command to stdout)
+    #[arg(long)]
+    pub fzf: bool,
+
+    /// Allow selecting multiple commands with fzf (implies --fzf)
+    #[arg(long)]
+    pub multi_select: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -305,6 +321,14 @@ pub struct StatsDailyArgs {
     /// Filter to current session only
     #[arg(long)]
     pub session: bool,
+
+    /// Use fzf for interactive selection (outputs selected command to stdout)
+    #[arg(long)]
+    pub fzf: bool,
+
+    /// Allow selecting multiple commands with fzf (implies --fzf)
+    #[arg(long)]
+    pub multi_select: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -1041,10 +1065,16 @@ fn cmd_export(cfg: DbConfig, args: ExportArgs) -> Result<()> {
 }
 
 fn cmd_stats(cfg: DbConfig, args: StatsArgs) -> Result<()> {
-    let conn = open_db(&cfg)?;
-
     match args.command {
         StatsCommand::Top(a) => {
+            // Check if multi_select was requested but not fzf
+            if a.multi_select && !a.fzf {
+                anyhow::bail!("--multi-select requires --fzf flag");
+            }
+            if a.fzf {
+                return cmd_stats_top_fzf(cfg, a);
+            }
+            let conn = open_db(&cfg)?;
             let (sql, bind) = build_stats_top_sql(&a)?;
             let mut stmt = conn.prepare(&sql)?;
             let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
@@ -1056,6 +1086,14 @@ fn cmd_stats(cfg: DbConfig, args: StatsArgs) -> Result<()> {
             Ok(())
         }
         StatsCommand::ByPwd(a) => {
+            // Check if multi_select was requested but not fzf
+            if a.multi_select && !a.fzf {
+                anyhow::bail!("--multi-select requires --fzf flag");
+            }
+            if a.fzf {
+                return cmd_stats_by_pwd_fzf(cfg, a);
+            }
+            let conn = open_db(&cfg)?;
             let (sql, bind) = build_stats_by_pwd_sql(&a)?;
             let mut stmt = conn.prepare(&sql)?;
             let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
@@ -1068,6 +1106,14 @@ fn cmd_stats(cfg: DbConfig, args: StatsArgs) -> Result<()> {
             Ok(())
         }
         StatsCommand::Daily(a) => {
+            // Check if multi_select was requested but not fzf
+            if a.multi_select && !a.fzf {
+                anyhow::bail!("--multi-select requires --fzf flag");
+            }
+            if a.fzf {
+                return cmd_stats_daily_fzf(cfg, a);
+            }
+            let conn = open_db(&cfg)?;
             let (sql, bind) = build_stats_daily_sql(&a)?;
             let mut stmt = conn.prepare(&sql)?;
             let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
@@ -2572,6 +2618,295 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
     Ok(())
 }
 
+fn cmd_stats_top_fzf(cfg: DbConfig, args: StatsTopArgs) -> Result<()> {
+    // Check if multi_select was requested but not fzf
+    if args.multi_select && !args.fzf {
+        anyhow::bail!("--multi-select requires --fzf flag");
+    }
+
+    // Load fzf configuration
+    let fzf_config = load_fzf_config();
+
+    // Check if fzf is available
+    let fzf_binary = fzf_config.binary_path.as_deref().unwrap_or("fzf");
+    if which(fzf_binary).is_none() {
+        anyhow::bail!(
+            "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
+        );
+    }
+
+    let conn = open_db(&cfg)?;
+    let (sql, bind) = build_stats_top_sql(&args)?;
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+
+    // Collect items for fzf in a compact format
+    let mut fzf_input = String::new();
+    while let Some(r) = rows.next()? {
+        let cnt: i64 = r.get(0)?;
+        let cmd: String = r.get(1)?;
+
+        // Format: "cmd  (count uses)"
+        fzf_input.push_str(&format!("{}  ({} uses)\n", cmd, cnt));
+    }
+
+    if fzf_input.is_empty() {
+        return Ok(()); // No results to select from
+    }
+
+    // Run fzf with configuration
+    let mut fzf_cmd = std::process::Command::new(fzf_binary);
+    build_fzf_command(&mut fzf_cmd, &fzf_config);
+
+    // Override defaults with our specific settings
+    fzf_cmd.arg("--preview").arg("sdbh preview --command {{}}");
+
+    // Enable multi-select if requested
+    if args.multi_select {
+        fzf_cmd.arg("--multi");
+    } else {
+        fzf_cmd.arg("--no-multi");
+    }
+
+    fzf_cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    let mut fzf_process = fzf_cmd.spawn()?;
+
+    // Write input to fzf's stdin
+    if let Some(mut stdin) = fzf_process.stdin.take() {
+        std::io::Write::write_all(&mut stdin, fzf_input.as_bytes())?;
+        drop(stdin); // Close stdin to signal EOF
+    }
+
+    // Wait for fzf to complete and get output
+    let output = fzf_process.wait_with_output()?;
+
+    if !output.status.success() {
+        // User cancelled selection (Ctrl+C) or fzf failed
+        return Ok(());
+    }
+
+    // Extract the selected command(s)
+    let selected = String::from_utf8_lossy(&output.stdout);
+    let selected_lines: Vec<&str> = selected.lines().collect();
+
+    if selected_lines.is_empty() {
+        return Ok(());
+    }
+
+    // Process each selected line
+    for line in selected_lines {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Extract command from the fzf format: "cmd  (count uses)"
+        if let Some(cmd_end) = line.find("  (") {
+            let cmd = &line[..cmd_end];
+            println!("{}", cmd);
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_stats_by_pwd_fzf(cfg: DbConfig, args: StatsByPwdArgs) -> Result<()> {
+    // Check if multi_select was requested but not fzf
+    if args.multi_select && !args.fzf {
+        anyhow::bail!("--multi-select requires --fzf flag");
+    }
+
+    // Load fzf configuration
+    let fzf_config = load_fzf_config();
+
+    // Check if fzf is available
+    let fzf_binary = fzf_config.binary_path.as_deref().unwrap_or("fzf");
+    if which(fzf_binary).is_none() {
+        anyhow::bail!(
+            "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
+        );
+    }
+
+    let conn = open_db(&cfg)?;
+    let (sql, bind) = build_stats_by_pwd_sql(&args)?;
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+
+    // Collect items for fzf in a compact format
+    let mut fzf_input = String::new();
+    while let Some(r) = rows.next()? {
+        let cnt: i64 = r.get(0)?;
+        let pwd: String = r.get(1)?;
+        let cmd: String = r.get(2)?;
+
+        // Format: "cmd  [pwd]  (count uses)"
+        fzf_input.push_str(&format!("{}  [{}]  ({} uses)\n", cmd, pwd, cnt));
+    }
+
+    if fzf_input.is_empty() {
+        return Ok(()); // No results to select from
+    }
+
+    // Run fzf with configuration
+    let mut fzf_cmd = std::process::Command::new(fzf_binary);
+    build_fzf_command(&mut fzf_cmd, &fzf_config);
+
+    // Override defaults with our specific settings
+    fzf_cmd.arg("--preview").arg("sdbh preview --command {{}}");
+
+    // Enable multi-select if requested
+    if args.multi_select {
+        fzf_cmd.arg("--multi");
+    } else {
+        fzf_cmd.arg("--no-multi");
+    }
+
+    fzf_cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    let mut fzf_process = fzf_cmd.spawn()?;
+
+    // Write input to fzf's stdin
+    if let Some(mut stdin) = fzf_process.stdin.take() {
+        std::io::Write::write_all(&mut stdin, fzf_input.as_bytes())?;
+        drop(stdin); // Close stdin to signal EOF
+    }
+
+    // Wait for fzf to complete and get output
+    let output = fzf_process.wait_with_output()?;
+
+    if !output.status.success() {
+        // User cancelled selection (Ctrl+C) or fzf failed
+        return Ok(());
+    }
+
+    // Extract the selected command(s)
+    let selected = String::from_utf8_lossy(&output.stdout);
+    let selected_lines: Vec<&str> = selected.lines().collect();
+
+    if selected_lines.is_empty() {
+        return Ok(());
+    }
+
+    // Process each selected line
+    for line in selected_lines {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Extract command from the fzf format: "cmd  [pwd]  (count uses)"
+        if let Some(cmd_end) = line.find("  [") {
+            let cmd = &line[..cmd_end];
+            println!("{}", cmd);
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_stats_daily_fzf(cfg: DbConfig, args: StatsDailyArgs) -> Result<()> {
+    // Check if multi_select was requested but not fzf
+    if args.multi_select && !args.fzf {
+        anyhow::bail!("--multi-select requires --fzf flag");
+    }
+
+    // Load fzf configuration
+    let fzf_config = load_fzf_config();
+
+    // Check if fzf is available
+    let fzf_binary = fzf_config.binary_path.as_deref().unwrap_or("fzf");
+    if which(fzf_binary).is_none() {
+        anyhow::bail!(
+            "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
+        );
+    }
+
+    let conn = open_db(&cfg)?;
+    let (sql, bind) = build_stats_daily_sql(&args)?;
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+
+    // Collect items for fzf in a compact format
+    let mut fzf_input = String::new();
+    while let Some(r) = rows.next()? {
+        let day: String = r.get(0)?;
+        let cnt: i64 = r.get(1)?;
+
+        // Format: "day  (count commands)"
+        fzf_input.push_str(&format!("{}  ({} commands)\n", day, cnt));
+    }
+
+    if fzf_input.is_empty() {
+        return Ok(()); // No results to select from
+    }
+
+    // Run fzf with configuration
+    let mut fzf_cmd = std::process::Command::new(fzf_binary);
+    build_fzf_command(&mut fzf_cmd, &fzf_config);
+
+    // For daily stats, we can't preview individual commands since we only have dates
+    // So we'll skip the preview for this one
+
+    // Enable multi-select if requested
+    if args.multi_select {
+        fzf_cmd.arg("--multi");
+    } else {
+        fzf_cmd.arg("--no-multi");
+    }
+
+    fzf_cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    let mut fzf_process = fzf_cmd.spawn()?;
+
+    // Write input to fzf's stdin
+    if let Some(mut stdin) = fzf_process.stdin.take() {
+        std::io::Write::write_all(&mut stdin, fzf_input.as_bytes())?;
+        drop(stdin); // Close stdin to signal EOF
+    }
+
+    // Wait for fzf to complete and get output
+    let output = fzf_process.wait_with_output()?;
+
+    if !output.status.success() {
+        // User cancelled selection (Ctrl+C) or fzf failed
+        return Ok(());
+    }
+
+    // Extract the selected command(s)
+    let selected = String::from_utf8_lossy(&output.stdout);
+    let selected_lines: Vec<&str> = selected.lines().collect();
+
+    if selected_lines.is_empty() {
+        return Ok(());
+    }
+
+    // Process each selected line
+    for line in selected_lines {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Extract day from the fzf format: "day  (count commands)"
+        if let Some(day_end) = line.find("  (") {
+            let day = &line[..day_end];
+            println!("{}", day);
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2620,5 +2955,52 @@ mod tests {
         };
         let (_sql, bind) = build_summary_sql(&args).unwrap();
         assert_eq!(bind.last().unwrap(), "5");
+    }
+
+    #[test]
+    fn build_stats_top_sql_basic() {
+        let args = StatsTopArgs {
+            days: 30,
+            limit: 50,
+            all: false,
+            session: false,
+            fzf: false,
+            multi_select: false,
+        };
+        let (sql, bind) = build_stats_top_sql(&args).unwrap();
+        assert!(sql.contains("GROUP BY cmd"));
+        assert!(sql.contains("ORDER BY cnt DESC"));
+        assert!(bind.len() > 0);
+    }
+
+    #[test]
+    fn build_stats_by_pwd_sql_basic() {
+        let args = StatsByPwdArgs {
+            days: 30,
+            limit: 50,
+            all: false,
+            session: false,
+            fzf: false,
+            multi_select: false,
+        };
+        let (sql, bind) = build_stats_by_pwd_sql(&args).unwrap();
+        assert!(sql.contains("GROUP BY pwd, cmd"));
+        assert!(sql.contains("ORDER BY cnt DESC"));
+        assert!(bind.len() > 0);
+    }
+
+    #[test]
+    fn build_stats_daily_sql_basic() {
+        let args = StatsDailyArgs {
+            days: 30,
+            all: false,
+            session: false,
+            fzf: false,
+            multi_select: false,
+        };
+        let (sql, bind) = build_stats_daily_sql(&args).unwrap();
+        assert!(sql.contains("GROUP BY day"));
+        assert!(sql.contains("ORDER BY day ASC"));
+        assert!(bind.len() > 0);
     }
 }

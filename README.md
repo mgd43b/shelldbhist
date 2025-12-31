@@ -238,6 +238,18 @@ sdbh stats by-pwd --all --days 30 --limit 20
 sdbh stats daily --all --days 30
 ```
 
+#### Interactive Stats Selection
+```bash
+# Select from top commands interactively
+sdbh stats top --fzf
+
+# Select from commands by directory
+sdbh stats by-pwd --fzf
+
+# Multi-select from daily command counts
+sdbh stats daily --fzf --multi-select
+```
+
 ### Import
 Import/merge an existing `dbhist.sh` database (hash de-dup):
 ```bash
