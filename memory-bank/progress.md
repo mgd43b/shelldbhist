@@ -10,12 +10,13 @@
   - `sdbh db optimize` - creates missing indexes and runs optimization
   - `sdbh db stats` - detailed database statistics and fragmentation analysis
 - **Automatic performance optimization**: Enabled for all users by default on database open
-- **Integration test coverage**: 53 tests covering all functionality including 17 new comprehensive error handling tests
+- **Integration test coverage**: 56 tests covering all functionality including 17 new comprehensive error handling tests
 - **Test coverage improvement**: CLI module from 53% to 60.6% coverage (+7.6% absolute improvement)
 - **fzf integration**: Interactive fuzzy selection with `--fzf` flag for `list`, `search`, and `summary` commands
 - **fzf preview pane**: Right-side preview showing command statistics when hovering in fzf
 - **Multi-select fzf**: `--multi-select` flag allows selecting multiple commands with Tab key
-- **Comprehensive documentation**: README.md updated with fzf integration examples and shell functions
+- **Custom fzf configuration**: Comprehensive `~/.sdbh.toml` support for colors, layout, key bindings, and preview settings
+- **Comprehensive documentation**: README.md updated with fzf integration examples, configuration guide, and shell functions
 
 ## CI / Releases
 - CI workflow: `.github/workflows/ci.yml` runs fmt/clippy/test.

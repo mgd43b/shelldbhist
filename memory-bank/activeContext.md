@@ -107,9 +107,23 @@
   - Zsh custom widgets for seamless integration
 
 ## Recent changes
+### Custom fzf Configuration System (feat/fzf-config-system)
+- **Comprehensive fzf customization**: Added `~/.sdbh.toml` `[fzf]` section with full configuration support
+- **Layout and appearance options**: Height, layout style, border styles, color schemes
+- **Preview customization**: Window positioning, custom preview commands
+- **Key binding support**: Array of custom fzf key bindings
+- **Binary path override**: Support for alternative fzf installations
+- **FzfConfig struct**: Complete TOML deserialization with validation
+- **build_fzf_command() function**: Applies configuration to all fzf command invocations
+- **All fzf commands updated**: `list --fzf`, `search --fzf`, `summary --fzf` use configuration
+- **Graceful fallbacks**: Works perfectly without any config, invalid configs ignored
+- **Extensive testing**: 9 new integration tests for config loading, validation, and application
+- **Documentation**: Complete README section with examples and popular color schemes
+- **Backward compatibility**: All existing functionality works unchanged
+
 ### Comprehensive Test Coverage Expansion (feat/test-coverage-expansion)
 - **Massive test coverage improvement**: CLI module from 53% to 60.6% coverage (+7.6% absolute improvement)
-- **Overall coverage**: 57.67% → 57.75% (+0.08% improvement) with 53 tests passing
+- **Overall coverage**: 57.67% → 57.75% (+0.08% improvement) with 56 tests passing
 - **Comprehensive error handling tests**: Added 17 new integration tests covering:
   - **Error conditions**: Invalid arguments, missing files, fzf unavailable, database corruption
   - **Boundary conditions**: Empty commands, very long commands (10KB+), extreme timestamps
@@ -122,9 +136,13 @@
 - **Test-driven development validated**: Comprehensive edge case testing improves code quality
 
 ## Next steps
-- **Enhanced fzf Experience**: Implement custom configuration and Ctrl+R replacement
-  - Custom fzf configuration: Colors, height, preview options via ~/.sdbh.toml
-  - History integration: Replace Ctrl+R with sdbh-powered fuzzy search
-  - TDD approach: Write comprehensive tests first for all new functionality
+- **Ctrl+R History Integration**: Replace default shell history with sdbh-powered fuzzy search
+  - Bash/zsh integration: Override Ctrl+R with sdbh list --fzf
+  - Custom shell functions: sdbh-fzf-history() for seamless replacement
+  - Zsh widgets: Custom key bindings for enhanced history navigation
+- **Command Templates**: Context-aware command suggestions
+  - sdbh-git: Git-specific command filtering
+  - sdbh-docker: Docker command filtering
+  - sdbh-k8s: Kubernetes operations filtering
 - Keep operational release guidance in `docs/releasing.md`.
 - Consider adding a short "Releasing" section in README that points to `docs/releasing.md`.

@@ -87,6 +87,9 @@
 - **Three command integration points**: `list --fzf`, `search --fzf`, `summary --fzf` all support interactive selection
 - **Preview pane**: Right-side preview (50% width) shows command statistics when hovering
 - **Multi-select support**: `--multi-select` flag enables Tab-based multi-selection in fzf
+- **Custom fzf configuration**: Comprehensive `~/.sdbh.toml` support for all fzf options
+- **Configuration options**: Height, layout, borders, colors, key bindings, preview settings, binary path
+- **Graceful fallbacks**: Works perfectly without configuration, invalid configs ignored
 - **Compact output formats**: Optimized for fzf readability:
   - List/search: `"command  (timestamp) [directory]"`
   - Summary: `"command [directory]  (count uses, last: timestamp)"`
