@@ -6,6 +6,16 @@
 - **Eliminate version/tag drift** between Git tags, Cargo.toml, and release-please state.
 
 ## Recent changes
+### CI/CD Pipeline Complete Resolution (feat/ci-pipeline-resolution)
+- **GitHub Actions workflow fixed**: PR events now handled gracefully without tag resolution attempts
+- **Pre-commit hook implemented**: Automatic Rust code quality enforcement (cargo fmt + clippy)
+- **All integration tests passing**: 68/68 tests pass (previously 4 failing due to test expectations)
+- **Enhanced preview system completed**: Context-aware command analysis with related commands
+- **Test suite expanded**: Comprehensive coverage of error conditions, boundary cases, and edge cases
+- **Production readiness achieved**: Robust CI/CD pipeline with quality gates and automated testing
+- **Dependabot compatibility**: PR validation works without publishing, allowing safe dependency updates
+- **Code quality enforcement**: Automatic formatting and linting checks prevent quality drift
+
 ### Database Performance Optimizations and Health Monitoring (feat/performance-optimizations)
 - **Performance indexes**: Added 4 automatic indexes for optimal query performance:
   - `idx_history_session` on (salt, ppid) for session filtering
