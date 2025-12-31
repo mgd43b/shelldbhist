@@ -2189,7 +2189,7 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
         let mut count = 0;
         while let Some(recent_row) = recent_rows.next()? {
             count += 1;
-            let id: i64 = recent_row.get(0)?;
+            let _id: i64 = recent_row.get(0)?;
             let epoch: i64 = recent_row.get(1)?;
             let pwd: String = recent_row.get(2)?;
             let full_cmd: String = recent_row.get(3)?;
@@ -2221,7 +2221,10 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
                 pwd
             };
 
-            println!("  {}. {} | {} | {}", count, relative_time, short_cmd, short_pwd);
+            println!(
+                "  {}. {} | {} | {}",
+                count, relative_time, short_cmd, short_pwd
+            );
         }
 
         // Show related commands
@@ -2262,7 +2265,8 @@ fn format_relative_time(epoch: i64) -> String {
         _ => {
             // For older timestamps, show the actual date
             if let Ok(dt) = OffsetDateTime::from_unix_timestamp(epoch) {
-                dt.format(time::macros::format_description!("[year]-[month]-[day]")).unwrap_or_else(|_| format_timestamp(epoch))
+                dt.format(time::macros::format_description!("[year]-[month]-[day]"))
+                    .unwrap_or_else(|_| format_timestamp(epoch))
             } else {
                 format_timestamp(epoch)
             }
@@ -2524,10 +2528,7 @@ fn find_semantic_related_commands(base_cmd: &str, cmd_type: CommandType) -> Vec<
                     "git branch -a".to_string(),
                 ]);
             } else if base_cmd.contains("checkout") || base_cmd.contains("switch") {
-                suggestions.extend(vec![
-                    "git status".to_string(),
-                    "git branch".to_string(),
-                ]);
+                suggestions.extend(vec!["git status".to_string(), "git branch".to_string()]);
             }
         }
         CommandType::Docker => {
@@ -2544,10 +2545,7 @@ fn find_semantic_related_commands(base_cmd: &str, cmd_type: CommandType) -> Vec<
                     "docker stop".to_string(),
                 ]);
             } else if base_cmd.contains("ps") {
-                suggestions.extend(vec![
-                    "docker logs".to_string(),
-                    "docker exec".to_string(),
-                ]);
+                suggestions.extend(vec!["docker logs".to_string(), "docker exec".to_string()]);
             }
         }
         CommandType::Cargo => {
@@ -2558,15 +2556,9 @@ fn find_semantic_related_commands(base_cmd: &str, cmd_type: CommandType) -> Vec<
                     "cargo check".to_string(),
                 ]);
             } else if base_cmd.contains("test") {
-                suggestions.extend(vec![
-                    "cargo build".to_string(),
-                    "cargo run".to_string(),
-                ]);
+                suggestions.extend(vec!["cargo build".to_string(), "cargo run".to_string()]);
             } else if base_cmd.contains("run") {
-                suggestions.extend(vec![
-                    "cargo build".to_string(),
-                    "cargo test".to_string(),
-                ]);
+                suggestions.extend(vec!["cargo build".to_string(), "cargo test".to_string()]);
             }
         }
         CommandType::Npm => {
@@ -2577,10 +2569,7 @@ fn find_semantic_related_commands(base_cmd: &str, cmd_type: CommandType) -> Vec<
                     "npm test".to_string(),
                 ]);
             } else if base_cmd.contains("start") {
-                suggestions.extend(vec![
-                    "npm run build".to_string(),
-                    "npm test".to_string(),
-                ]);
+                suggestions.extend(vec!["npm run build".to_string(), "npm test".to_string()]);
             }
         }
         CommandType::Make => {
@@ -2623,7 +2612,10 @@ fn find_tool_related_commands(conn: &rusqlite::Connection, base_cmd: &str) -> Re
     Ok(suggestions)
 }
 
-fn find_workflow_related_commands(conn: &rusqlite::Connection, base_cmd: &str) -> Result<Vec<String>> {
+fn find_workflow_related_commands(
+    conn: &rusqlite::Connection,
+    base_cmd: &str,
+) -> Result<Vec<String>> {
     // Find commands that are commonly used in the same sessions as the base command
     let sql = r#"
         SELECT h2.cmd, COUNT(*) as co_occurrences, MAX(h2.epoch) as latest_epoch
@@ -2649,7 +2641,10 @@ fn find_workflow_related_commands(conn: &rusqlite::Connection, base_cmd: &str) -
     Ok(suggestions)
 }
 
-fn find_directory_related_commands(conn: &rusqlite::Connection, base_cmd: &str) -> Result<Vec<String>> {
+fn find_directory_related_commands(
+    conn: &rusqlite::Connection,
+    base_cmd: &str,
+) -> Result<Vec<String>> {
     // Find commands used in the same directories as the base command
     let sql = r#"
         SELECT h2.cmd, COUNT(*) as shared_dirs, MAX(h2.epoch) as latest_epoch
