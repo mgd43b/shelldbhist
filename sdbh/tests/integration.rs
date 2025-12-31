@@ -2145,10 +2145,12 @@ fn preview_shows_command_statistics() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Command: git status"))
+        .stdout(predicate::str::contains("🔍 Command Analysis: git status"))
         .stdout(predicate::str::contains("Total uses: 3"))
-        .stdout(predicate::str::contains("Unique directories: 3"))
-        .stdout(predicate::str::contains("🕒 Recent Executions:"));
+        .stdout(predicate::str::contains("Directories: 3"))
+        .stdout(predicate::str::contains(
+            "🕒 Recent Activity (Last 5 executions):",
+        ));
 }
 
 #[test]
@@ -2634,7 +2636,9 @@ fn preview_with_very_long_command() {
         .args(["--db", db.to_string_lossy().as_ref(), "preview", &long_cmd])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Command: very_long_command_name"));
+        .stdout(predicate::str::contains(
+            "🔍 Command Analysis: very_long_command_name",
+        ));
 }
 
 #[test]
@@ -3155,9 +3159,8 @@ fn preview_enhanced_context_aware_git() {
         .unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("🔍 Command Analysis"));
-    assert!(stdout.contains("Type: 🔧 Git"));
-    assert!(stdout.contains("Shows working directory status"));
+    assert!(stdout.contains("🔍 Command Analysis: git status"));
+    assert!(stdout.contains("ℹ️  Context: Shows working directory status"));
 }
 
 #[test]
@@ -3216,8 +3219,7 @@ fn preview_enhanced_context_aware_docker() {
         .unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Type: 🐳 Docker"));
-    assert!(stdout.contains("Lists running containers"));
+    assert!(stdout.contains("ℹ️  Context: Lists running containers"));
     assert!(stdout.contains("🔗 Related Commands"));
     assert!(stdout.contains("docker build ."));
 }
@@ -3270,7 +3272,7 @@ fn preview_enhanced_recent_executions() {
         .unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("🕒 Recent Executions"));
+    assert!(stdout.contains("🕒 Recent Activity (Last 5 executions):"));
     // Should show up to 5 recent executions
     assert!(stdout.contains("/tmp/project6"));
     assert!(stdout.contains("/tmp/project5"));
@@ -3367,8 +3369,11 @@ fn preview_enhanced_command_type_detection() {
             .unwrap();
 
         let stdout = String::from_utf8_lossy(&output.stdout);
+        // Phase 3: Type information is now in the context section, not the header
+        // The type is no longer explicitly shown in the preview output
+        // We just verify the command is found and the preview works
         assert!(
-            stdout.contains(&format!("Type: {}", expected_type)),
+            stdout.contains("🔍 Command Analysis"),
             "Failed for command: {}",
             cmd
         );

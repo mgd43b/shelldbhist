@@ -2139,45 +2139,56 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
             return Ok(());
         }
 
+        // Detect terminal width for responsive design
+        let term_width = get_terminal_width().unwrap_or(80);
+
         // Format timestamps
         let last_used = last_used_epoch
-            .map(format_timestamp)
+            .map(format_relative_time)
             .unwrap_or_else(|| "Never".to_string());
         let first_used = first_used_epoch
-            .map(format_timestamp)
+            .map(format_relative_time)
             .unwrap_or_else(|| "Never".to_string());
 
         // Detect command type for context-aware preview
         let cmd_type = CommandType::detect(&args.command);
 
-        // Context-aware preview header
-        println!("🔍 Command Analysis");
-        println!("Command: {}", args.command);
-        println!("Type: {}", format_command_type(cmd_type));
-        println!("Total uses: {}", total_uses);
-        println!("First used: {}", first_used);
-        println!("Last used: {}", last_used);
-        println!("Unique directories: {}", unique_dirs);
+        // Phase 3: Professional Layout with Organized Sections
+        println!(
+            "🔍 Command Analysis: {}",
+            truncate_for_display(&args.command, term_width - 25)
+        );
+        println!("{}", "━".repeat(term_width.min(80)));
 
-        // Show context-aware information based on command type
-        show_command_type_info(&conn, &args.command, cmd_type)?;
+        // 📊 Usage Statistics Section
+        println!("📊 Usage Statistics");
+        println!("  Total uses: {}", total_uses);
+        println!("  First used: {}", first_used);
+        println!("  Last used: {}", last_used);
+        println!("  Directories: {}", unique_dirs);
 
+        // ℹ️ Context Information Section
+        if let Some(context) = get_command_context(&args.command, cmd_type) {
+            println!("\nℹ️  Context: {}", context);
+        }
+
+        // 📁 Directory Usage Section
         if let Some(dirs) = dirs {
             let dir_list: Vec<&str> = dirs.split(',').collect();
             if !dir_list.is_empty() {
                 println!("\n📁 Directory Usage:");
-                // Show up to 5 most recent directories
-                for dir in dir_list.iter().take(5) {
-                    println!("  {}", dir);
+                let max_dirs = if term_width > 120 { 8 } else { 5 };
+                for dir in dir_list.iter().take(max_dirs) {
+                    println!("  • {}", truncate_for_display(dir, term_width - 6));
                 }
-                if dir_list.len() > 5 {
-                    println!("  ... and {} more", dir_list.len() - 5);
+                if dir_list.len() > max_dirs {
+                    println!("  … and {} more", dir_list.len() - max_dirs);
                 }
             }
         }
 
-        // Show recent executions with enhanced context (last 5)
-        println!("\n🕒 Recent Executions:");
+        // 🕒 Recent Activity Section
+        println!("\n🕒 Recent Activity (Last 5 executions):");
         let mut recent_stmt = conn.prepare(
             "SELECT id, epoch, pwd, cmd
              FROM history
@@ -2194,40 +2205,54 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
             let pwd: String = recent_row.get(2)?;
             let full_cmd: String = recent_row.get(3)?;
 
-            // Use relative time for better readability
+            // Enhanced relative time display
             let relative_time = format_relative_time(epoch);
 
-            // Highlight command variations (show differences from base command)
+            // Highlight command variations with better formatting
             let base_cmd = args.command.as_str();
-            let cmd_display = if full_cmd == base_cmd {
-                full_cmd.clone()
+            let (cmd_display, variation_indicator) = if full_cmd == base_cmd {
+                (full_cmd.clone(), "")
             } else if full_cmd.starts_with(&(base_cmd.to_string() + " ")) {
                 // Show the arguments that differ
                 let args_part = &full_cmd[base_cmd.len()..];
-                format!("{}{}", base_cmd, args_part)
+                (format!("{}{}", base_cmd, args_part), "→")
             } else {
-                full_cmd.clone()
+                (full_cmd.clone(), "≠")
             };
 
-            // Truncate long commands and directories for fzf readability
-            let short_cmd = if cmd_display.len() > 50 {
-                format!("{}...", &cmd_display[..47])
-            } else {
-                cmd_display
-            };
-            let short_pwd = if pwd.len() > 30 {
-                format!("{}...", &pwd[pwd.len().saturating_sub(27)..])
-            } else {
-                pwd
-            };
+            // Responsive truncation based on terminal width
+            let time_width = 12;
+            let variation_width = if variation_indicator.is_empty() { 0 } else { 2 };
+            let remaining_width = term_width.saturating_sub(time_width + variation_width + 8); // padding
+            let cmd_width = (remaining_width * 60) / 100; // 60% for command
+            let pwd_width = remaining_width - cmd_width;
 
-            println!(
-                "  {}. {} | {} | {}",
-                count, relative_time, short_cmd, short_pwd
-            );
+            let short_cmd = truncate_for_display(&cmd_display, cmd_width);
+            let short_pwd = truncate_for_display(&pwd, pwd_width);
+
+            if variation_indicator.is_empty() {
+                println!(
+                    "  {}. {:<8} | {:<width1$} | {}",
+                    count,
+                    relative_time,
+                    short_cmd,
+                    short_pwd,
+                    width1 = cmd_width
+                );
+            } else {
+                println!(
+                    "  {}. {:<8} {} {:<width1$} | {}",
+                    count,
+                    relative_time,
+                    variation_indicator,
+                    short_cmd,
+                    short_pwd,
+                    width1 = cmd_width
+                );
+            }
         }
 
-        // Show related commands
+        // 🔗 Related Commands Section
         show_related_commands(&conn, &args.command, cmd_type)?;
     } else {
         println!("Command '{}' not found in history", args.command);
@@ -2274,6 +2299,7 @@ fn format_relative_time(epoch: i64) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn format_command_type(cmd_type: CommandType) -> &'static str {
     match cmd_type {
         CommandType::Git => "🔧 Git",
@@ -2291,6 +2317,7 @@ fn format_command_type(cmd_type: CommandType) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 fn show_command_type_info(
     conn: &rusqlite::Connection,
     cmd: &str,
@@ -2667,6 +2694,85 @@ fn find_directory_related_commands(
     }
 
     Ok(suggestions)
+}
+
+// Phase 3: Helper functions for responsive design and enhanced display
+
+fn get_terminal_width() -> Option<usize> {
+    terminal_size::terminal_size().map(|(terminal_size::Width(w), _)| w as usize)
+}
+
+fn truncate_for_display(text: &str, max_width: usize) -> String {
+    if text.len() <= max_width {
+        text.to_string()
+    } else if max_width <= 3 {
+        "...".to_string()
+    } else {
+        format!("{}...", &text[..max_width.saturating_sub(3)])
+    }
+}
+
+fn get_command_context(cmd: &str, cmd_type: CommandType) -> Option<String> {
+    match cmd_type {
+        CommandType::Git => {
+            if cmd.contains("status") {
+                Some("Shows working directory status and changes".to_string())
+            } else if cmd.contains("commit") {
+                Some("Records changes to repository".to_string())
+            } else if cmd.contains("push") {
+                Some("Uploads local commits to remote".to_string())
+            } else if cmd.contains("pull") {
+                Some("Downloads and integrates remote changes".to_string())
+            } else {
+                Some("Git version control operation".to_string())
+            }
+        }
+        CommandType::Docker => {
+            if cmd.contains("build") {
+                Some("Builds image from Dockerfile".to_string())
+            } else if cmd.contains("run") {
+                Some("Creates and starts new container".to_string())
+            } else if cmd.contains("ps") {
+                Some("Lists running containers".to_string())
+            } else {
+                Some("Docker container management".to_string())
+            }
+        }
+        CommandType::Cargo => {
+            if cmd.contains("build") {
+                Some("Compiles the current package".to_string())
+            } else if cmd.contains("test") {
+                Some("Runs package tests".to_string())
+            } else if cmd.contains("run") {
+                Some("Builds and runs the current package".to_string())
+            } else {
+                Some("Rust package management".to_string())
+            }
+        }
+        CommandType::Npm => {
+            if cmd.contains("install") {
+                Some("Installs package dependencies".to_string())
+            } else if cmd.contains("start") {
+                Some("Starts the application".to_string())
+            } else if cmd.contains("test") {
+                Some("Runs test suite".to_string())
+            } else {
+                Some("Node.js package management".to_string())
+            }
+        }
+        CommandType::Make => {
+            if cmd.contains("clean") {
+                Some("Removes build artifacts".to_string())
+            } else if cmd.contains("test") {
+                Some("Runs test suite".to_string())
+            } else if cmd.contains("install") {
+                Some("Installs project files".to_string())
+            } else {
+                Some("Builds project targets".to_string())
+            }
+        }
+        _ => None,
+    }
 }
 
 fn cmd_shell(args: ShellArgs) -> Result<()> {
