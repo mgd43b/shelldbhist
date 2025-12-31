@@ -10,20 +10,16 @@ Shell DB History (`sdbh`) stores your shell command history in a local SQLite da
 It’s inspired by `dbhist.sh`, but implemented as a portable Rust CLI backed by SQLite.
 
 ## Features
-- 🔍 __Interactive fuzzy search__ with `--fzf` flag
-- 📊 __Rich preview panes__ showing command statistics
-- 🎯 __Multi-select support__ with `--multi-select`
-- ⚙️ __Full configuration system__ via `~/.sdbh.toml`
-- 🎨 __Ctrl+R replacement__ for shell history search
+- 🔍 **Interactive fuzzy search** with `--fzf` flag for intelligent command selection
+- 📊 **Rich preview panes** showing command statistics and usage patterns
+- 🎯 **Multi-select support** with `--multi-select` flag for batch operations
+- ⚙️ **Full configuration system** via `~/.sdbh.toml` for colors, layout, and key bindings
+- 🎨 **Ctrl+R replacement** for shell history search (transformative UX improvement)
 - Local SQLite history database (`~/.sdbh.sqlite` by default)
 - Fast search (substring), raw history listing, grouped summaries
-- **Interactive fuzzy selection** with fzf integration (`--fzf` flags)
-- **Customizable fzf experience** via `~/.sdbh.toml` configuration
-- **Multi-select fzf** support with `--multi-select` flag
-- **fzf preview pane** showing command statistics and usage patterns
 - Stats (top commands, by-directory, daily buckets)
 - Database health monitoring and performance optimization
-- **Comprehensive test coverage** (60.6% CLI coverage, 53 integration tests)
+- Comprehensive test coverage (60.6% CLI coverage, 57 integration tests)
 - Import/merge from existing `dbhist.sh` SQLite databases
 - Import from shell history files (`.bash_history`, `.zsh_history`)
 
