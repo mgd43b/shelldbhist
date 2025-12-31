@@ -22,7 +22,7 @@ It’s inspired by `dbhist.sh`, but implemented as a portable Rust CLI backed by
 - Fast search (substring), raw history listing, grouped summaries
 - Stats (top commands, by-directory, daily buckets)
 - Database health monitoring and performance optimization
-- Comprehensive test coverage (64.8% overall, 87 integration tests)
+- Comprehensive test coverage with 87 integration tests
 - Import/merge from existing `dbhist.sh` SQLite databases
 - Import from shell history files (`.bash_history`, `.zsh_history`)
 
