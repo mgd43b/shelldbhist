@@ -48,11 +48,36 @@ Zsh:
 eval "$(sdbh shell --zsh)"
 ```
 
-### 2) Try it
+### 2) Replace Ctrl+R with intelligent fuzzy search (optional but recommended)
+**Bash** (~/.bashrc):
 ```bash
+sdbh-fzf-history() {
+  selected=$(sdbh list --all --fzf 2>/dev/null)
+  [[ -n "$selected" ]] && READLINE_LINE="$selected" && READLINE_POINT=${#selected}
+}
+bind -x '"\C-r": sdbh-fzf-history'
+```
+
+**Zsh** (~/.zshrc):
+```zsh
+function sdbh-history-widget() {
+  selected=$(sdbh list --all --fzf 2>/dev/null)
+  [[ -n "$selected" ]] && LBUFFER="$selected"
+  zle reset-prompt
+}
+zle -N sdbh-history-widget
+bindkey '^R' sdbh-history-widget
+```
+
+### 3) Try it
+```bash
+# Basic commands
 sdbh search kubectl --all --limit 20
 sdbh summary git
 sdbh list --all --limit 20
+
+# Try the new Ctrl+R fuzzy search!
+# Press Ctrl+R in your terminal - you'll get intelligent fuzzy search instead of basic history
 ```
 
 ## Database
@@ -240,10 +265,46 @@ sdbh doctor --format json
 
 ## Interactive Fuzzy Selection
 
-`sdbh` integrates with [fzf](https://github.com/junegun/fzf) for interactive command selection. Add the `--fzf` flag to any search, list, or summary command to launch an interactive fuzzy finder.
+`sdbh` integrates with [fzf](https://github.com/junegun/fzf) for interactive command selection. The killer feature is **replacing your shell's Ctrl+R history search** with sdbh's intelligent fuzzy search across your entire command history.
 
 ### Requirements
 - Install [fzf](https://github.com/junegun/fzf) (available via most package managers)
+
+### ⚡ Power User Feature: Ctrl+R History Replacement
+
+**Transform your shell experience** by replacing the basic Ctrl+R search with sdbh's advanced fuzzy search:
+
+- **Before**: Basic substring matching in current session only
+- **After**: Intelligent fuzzy search across your entire command history with preview pane
+
+**One-time setup** (add to your `~/.bashrc` or `~/.zshrc`):
+
+**Bash:**
+```bash
+# Replace Ctrl+R with sdbh fuzzy search
+sdbh-fzf-history() {
+  selected=$(sdbh list --all --fzf 2>/dev/null)
+  [[ -n "$selected" ]] && READLINE_LINE="$selected" && READLINE_POINT=${#selected}
+}
+bind -x '"\C-r": sdbh-fzf-history'
+```
+
+**Zsh:**
+```zsh
+function sdbh-history-widget() {
+  selected=$(sdbh list --all --fzf 2>/dev/null)
+  [[ -n "$selected" ]] && LBUFFER="$selected"
+  zle reset-prompt
+}
+zle -N sdbh-history-widget
+bindkey '^R' sdbh-history-widget
+```
+
+Now **Ctrl+R** gives you:
+- Fuzzy search across ALL your commands (not just current session)
+- Rich preview pane showing command usage statistics
+- Customizable colors and layout via `~/.sdbh.toml`
+- Multi-select capability for batch operations
 
 ### Basic Usage
 
@@ -271,22 +332,46 @@ kubectl get pods -n kube-system
 Add these functions to your `~/.bashrc` or `~/.zshrc` for enhanced fzf integration:
 
 **Bash/Zsh: Enhanced History Search (Ctrl+R replacement)**
+Replace your shell's default history search with sdbh's powerful fuzzy search:
+
+**Bash (~/.bashrc):**
 ```bash
-# sdbh-powered history search
+# sdbh-powered history search - replaces Ctrl+R
 sdbh-fzf-history() {
   local selected
+  # Use sdbh's fuzzy search instead of basic shell history
   selected=$(sdbh list --all --fzf 2>/dev/null)
   if [[ -n "$selected" ]]; then
+    # Insert selected command into current line
     READLINE_LINE="$selected"
     READLINE_POINT=${#selected}
   fi
 }
 
-# Bind to Ctrl+R in bash
+# Bind to Ctrl+R (replaces default reverse-search-history)
 bind -x '"\C-r": sdbh-fzf-history'
+```
 
-# Bind to Ctrl+R in zsh
-bindkey '^R' sdbh-fzf-history
+**Zsh (~/.zshrc):**
+```zsh
+# sdbh-powered history search widget - replaces Ctrl+R
+function sdbh-history-widget() {
+  local selected
+  # Launch sdbh fuzzy search
+  selected=$(sdbh list --all --fzf 2>/dev/null)
+  if [[ -n "$selected" ]]; then
+    # Insert into command line buffer
+    LBUFFER="$selected"
+  fi
+  # Reset prompt display
+  zle reset-prompt
+}
+
+# Register the widget
+zle -N sdbh-history-widget
+
+# Bind to Ctrl+R (replaces default history-incremental-search-backward)
+bindkey '^R' sdbh-history-widget
 ```
 
 **Bash/Zsh: Command Templates**
