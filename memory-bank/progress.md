@@ -10,8 +10,9 @@
   - `sdbh db optimize` - creates missing indexes and runs optimization
   - `sdbh db stats` - detailed database statistics and fragmentation analysis
 - **Automatic performance optimization**: Enabled for all users by default on database open
-- **Integration test coverage**: **68/68 tests passing** covering all functionality including 17 new comprehensive error handling tests + 5 new stats fzf tests + 6 new enhanced preview tests
-- **Test coverage improvement**: CLI module from 53% to 60.6% coverage (+7.6% absolute improvement), integration tests from 57 to 68 (+19.3% increase)
+- **Integration test coverage**: **76/76 tests passing** covering all functionality including 17 new comprehensive error handling tests + 5 new stats fzf tests + 6 new enhanced preview tests + 6 new coverage expansion tests
+- **Major test coverage improvement**: CLI module from 53% to 63.3% coverage (+10.3% absolute improvement), overall coverage 54.60% → 65.39% (+10.79%), integration tests from 57 to 76 (+33.3% increase)
+- **Systematic error handling coverage**: Added comprehensive tests for shell integration, JSON output, configuration systems, and database operations
 - **fzf integration**: Interactive fuzzy selection with `--fzf` flag for `list`, `search`, `summary`, and `stats` commands
 - **fzf preview pane**: Right-side preview showing command statistics when hovering in fzf
 - **Multi-select fzf**: `--multi-select` flag allows selecting multiple commands with Tab key
