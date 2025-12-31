@@ -434,13 +434,13 @@ pub struct TemplateArgs {
     #[arg(long)]
     pub list: bool,
 
-    /// Create or update a template (interactive mode)
+    /// Create or update a template
     #[arg(long)]
-    pub create: bool,
+    pub create: Option<String>,
 
     /// Delete a template
     #[arg(long)]
-    pub delete: bool,
+    pub delete: Option<String>,
 
     /// Use fzf for interactive template selection
     #[arg(long)]
@@ -3565,13 +3565,196 @@ fn cmd_stats_daily_fzf(cfg: DbConfig, args: StatsDailyArgs) -> Result<()> {
     Ok(())
 }
 
-fn cmd_template(_cfg: DbConfig, _args: TemplateArgs) -> Result<()> {
-    // Placeholder implementation for Command Templates System
-    // TODO: Implement full template system with TOML configuration, variable substitution, and fzf integration
-    println!("Command Templates System - Coming Soon!");
-    println!(
-        "This feature will allow you to define reusable command patterns with variable substitution."
-    );
+fn cmd_template(_cfg: DbConfig, args: TemplateArgs) -> Result<()> {
+    let engine = crate::template::TemplateEngine::new()?;
+
+    if args.list {
+        // List all templates
+        let templates = engine.list_templates()?;
+        if templates.is_empty() {
+            println!("No templates found. Create one with: sdbh template --create <name>");
+            return Ok(());
+        }
+
+        println!("Available Templates:");
+        println!("===================");
+        for template in templates {
+            println!(
+                "• {} - {}",
+                template.name,
+                template.description.as_deref().unwrap_or("No description")
+            );
+            if let Some(category) = &template.category {
+                println!("  Category: {}", category);
+            }
+            println!("  Variables: {}", template.variables.len());
+            println!();
+        }
+        return Ok(());
+    }
+
+    if let Some(name) = &args.create {
+        // Create a new template interactively
+        return create_template_interactive(&engine, name);
+    }
+
+    if let Some(name) = &args.delete {
+        // Delete a template
+        engine.delete_template(name)?;
+        println!("Deleted template: {}", name);
+        return Ok(());
+    }
+
+    // Execute a template
+    if let Some(template_name) = &args.name {
+        let template = engine.load_template(template_name)?;
+
+        // Parse variable assignments from command line
+        let mut provided_vars = std::collections::HashMap::new();
+        for var_assignment in &args.var {
+            if let Some((key, value)) = var_assignment.split_once('=') {
+                provided_vars.insert(key.to_string(), value.to_string());
+            } else {
+                anyhow::bail!(
+                    "Invalid variable assignment: {}. Use format: key=value",
+                    var_assignment
+                );
+            }
+        }
+
+        // Resolve and execute the template with interactive prompting if needed
+        let resolved = engine.resolve_template_interactive(&template, &provided_vars)?;
+        println!("{}", resolved.resolved_command);
+    } else if args.fzf {
+        // fzf integration for template selection
+        println!("fzf template selection will be available in v0.13.0");
+        return Ok(());
+    } else {
+        // No specific action, show help
+        println!("Command Templates System");
+        println!("========================");
+        println!();
+        println!("Usage:");
+        println!("  sdbh template --list                    # List all templates");
+        println!("  sdbh template --create <name>           # Create a new template");
+        println!("  sdbh template --delete <name>           # Delete a template");
+        println!("  sdbh template <name>                    # Execute a template");
+        println!("  sdbh template <name> --var key=value    # Execute with variables");
+        println!();
+        println!(
+            "Templates are stored in: {}",
+            engine.templates_dir().display()
+        );
+    }
+
+    Ok(())
+}
+
+/// Create a template interactively
+fn create_template_interactive(engine: &crate::template::TemplateEngine, name: &str) -> Result<()> {
+    println!("Creating template: {}", name);
+    println!("Enter template information interactively:");
+    println!();
+
+    // Get template name (use provided name as default)
+    let name = dialoguer::Input::<String>::new()
+        .with_prompt("Template name")
+        .default(name.to_string())
+        .interact_text()?;
+
+    // Get description
+    let description = dialoguer::Input::<String>::new()
+        .with_prompt("Description (optional)")
+        .allow_empty(true)
+        .interact_text()?;
+
+    // Get command template
+    let command = dialoguer::Input::<String>::new()
+        .with_prompt("Command template (use {variable} for placeholders)")
+        .interact_text()?;
+
+    // Get category (optional)
+    let category = dialoguer::Input::<String>::new()
+        .with_prompt("Category (optional, e.g., git, docker)")
+        .allow_empty(true)
+        .interact_text()?;
+    let category = if category.trim().is_empty() {
+        None
+    } else {
+        Some(category.trim().to_string())
+    };
+
+    // Extract variables from command
+    let extracted_vars = crate::template::extract_variables(&command)?;
+    let mut variables = Vec::new();
+
+    if extracted_vars.is_empty() {
+        println!("No variables found in command template.");
+    } else {
+        println!("Found variables in command: {}", extracted_vars.join(", "));
+        println!("Configure each variable:");
+        println!();
+
+        for var_name in extracted_vars {
+            // Get variable description
+            let var_desc = dialoguer::Input::<String>::new()
+                .with_prompt(format!("Description for '{}' (optional)", var_name))
+                .allow_empty(true)
+                .interact_text()?;
+
+            // Check if variable is required
+            let required = dialoguer::Confirm::new()
+                .with_prompt(format!("Is '{}' required?", var_name))
+                .default(true)
+                .interact()?;
+
+            // Get default value if not required
+            let default = if !required {
+                let default_val = dialoguer::Input::<String>::new()
+                    .with_prompt(format!("Default value for '{}' (optional)", var_name))
+                    .allow_empty(true)
+                    .interact_text()?;
+                if default_val.trim().is_empty() {
+                    None
+                } else {
+                    Some(default_val.trim().to_string())
+                }
+            } else {
+                None
+            };
+
+            variables.push(crate::domain::Variable {
+                name: var_name,
+                description: if var_desc.trim().is_empty() {
+                    None
+                } else {
+                    Some(var_desc.trim().to_string())
+                },
+                required,
+                default,
+            });
+        }
+    }
+
+    // Create the template
+    let template = crate::domain::Template {
+        id: name.clone(),
+        name,
+        description: if description.trim().is_empty() {
+            None
+        } else {
+            Some(description.trim().to_string())
+        },
+        command,
+        category,
+        variables,
+        defaults: std::collections::HashMap::new(), // Individual defaults are in variables
+    };
+
+    // Validate and save
+    engine.save_template(&template)?;
+    println!("Template '{}' created successfully!", template.name);
+
     Ok(())
 }
 

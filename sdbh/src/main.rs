@@ -1,6 +1,7 @@
 mod cli;
 mod db;
 mod domain;
+mod template;
 
 use anyhow::Result;
 use clap::Parser;
