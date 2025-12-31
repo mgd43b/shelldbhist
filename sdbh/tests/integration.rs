@@ -4053,3 +4053,92 @@ binary_path = "/usr/local/bin/fzf"
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(stderr.contains("fzf is not installed") || stderr.contains("No such file"));
 }
+
+// Template CLI Integration Tests - Phase 2 Coverage Improvement
+
+#[test]
+fn template_cli_list_empty() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Test template list when no templates exist (should show help)
+    sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "--list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No templates found"));
+}
+
+#[test]
+fn template_cli_create_interactive_fails_without_terminal() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Create a template (interactive creation requires terminal, so this will fail)
+    sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "--create", "test-template"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not a terminal"));
+}
+
+#[test]
+fn template_cli_delete_nonexistent() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Try to delete non-existent template
+    sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "--delete", "nonexistent"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Template 'nonexistent' not found"));
+}
+
+#[test]
+fn template_cli_help() {
+    // Test template command help
+    sdbh_cmd()
+        .args(["template", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("template"))
+        .stdout(predicate::str::contains("--create"))
+        .stdout(predicate::str::contains("--list"))
+        .stdout(predicate::str::contains("--delete"));
+}
+
+#[test]
+fn template_cli_unknown_template() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Test executing unknown template
+    sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "nonexistent"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Template 'nonexistent' not found"));
+}
+
+#[test]
+fn template_cli_no_args() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Test template command with no args (should show help)
+    let result = sdbh_cmd()
+        .env("HOME", home)
+        .args(["template"])
+        .output()
+        .unwrap();
+
+    // Should succeed and show help text
+    assert!(result.status.success());
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(stdout.contains("Command Templates System") || stdout.contains("template"));
+}
