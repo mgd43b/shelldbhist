@@ -2242,7 +2242,7 @@ fn show_command_type_info(
     }
 }
 
-fn show_git_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
+fn show_git_info(_conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
 
     if parts.len() >= 2 {
@@ -2268,7 +2268,7 @@ fn show_git_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     Ok(())
 }
 
-fn show_docker_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
+fn show_docker_info(_conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
 
     if parts.len() >= 2 {
@@ -2292,7 +2292,7 @@ fn show_docker_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     Ok(())
 }
 
-fn show_kubectl_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
+fn show_kubectl_info(_conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
 
     if parts.len() >= 2 {
@@ -2315,7 +2315,7 @@ fn show_kubectl_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     Ok(())
 }
 
-fn show_cargo_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
+fn show_cargo_info(_conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
 
     if parts.len() >= 2 {
@@ -2338,7 +2338,7 @@ fn show_cargo_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     Ok(())
 }
 
-fn show_npm_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
+fn show_npm_info(_conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
 
     if parts.len() >= 2 {
@@ -2359,7 +2359,7 @@ fn show_npm_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     Ok(())
 }
 
-fn show_make_info(conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
+fn show_make_info(_conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
 
     if parts.len() >= 2 {
