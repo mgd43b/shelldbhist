@@ -462,6 +462,46 @@ fn default_true() -> bool {
 struct ConfigFile {
     #[serde(default)]
     log: LogConfig,
+
+    #[serde(default)]
+    fzf: FzfConfig,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+struct FzfConfig {
+    /// Height of fzf window (e.g., "50%", "20")
+    height: Option<String>,
+
+    /// Layout style ("default", "reverse")
+    layout: Option<String>,
+
+    /// Border style ("rounded", "sharp", "bold", "double", "block", "thinblock")
+    border: Option<String>,
+
+    /// Color scheme (fzf color string)
+    color: Option<String>,
+
+    /// Color for header text
+    color_header: Option<String>,
+
+    /// Color for pointer
+    color_pointer: Option<String>,
+
+    /// Color for marker
+    color_marker: Option<String>,
+
+    /// Preview window settings (e.g., "right:50%")
+    preview_window: Option<String>,
+
+    /// Custom preview command
+    preview_command: Option<String>,
+
+    /// Key bindings (array of strings)
+    #[serde(default)]
+    bind: Vec<String>,
+
+    /// Custom fzf binary path
+    binary_path: Option<String>,
 }
 
 #[derive(Debug)]
@@ -525,6 +565,64 @@ fn load_config_file() -> Option<ConfigFile> {
     let path = config_path()?;
     let text = std::fs::read_to_string(&path).ok()?;
     toml::from_str::<ConfigFile>(&text).ok()
+}
+
+fn load_fzf_config() -> FzfConfig {
+    load_config_file()
+        .map(|cfg| cfg.fzf)
+        .unwrap_or_default()
+}
+
+fn build_fzf_command(base_cmd: &mut std::process::Command, fzf_config: &FzfConfig) {
+    // Apply configuration options to the fzf command
+
+    // Layout and appearance
+    if let Some(height) = &fzf_config.height {
+        base_cmd.arg("--height").arg(height);
+    }
+    if let Some(layout) = &fzf_config.layout {
+        base_cmd.arg("--layout").arg(layout);
+    }
+    if let Some(border) = &fzf_config.border {
+        base_cmd.arg("--border").arg(border);
+    }
+
+    // Colors
+    if let Some(color) = &fzf_config.color {
+        base_cmd.arg("--color").arg(color);
+    }
+    if let Some(color_header) = &fzf_config.color_header {
+        base_cmd.arg("--color").arg(format!("header:{}", color_header));
+    }
+    if let Some(color_pointer) = &fzf_config.color_pointer {
+        base_cmd.arg("--color").arg(format!("pointer:{}", color_pointer));
+    }
+    if let Some(color_marker) = &fzf_config.color_marker {
+        base_cmd.arg("--color").arg(format!("marker:{}", color_marker));
+    }
+
+    // Preview settings
+    if let Some(preview_window) = &fzf_config.preview_window {
+        base_cmd.arg("--preview-window").arg(preview_window);
+    }
+    if let Some(preview_command) = &fzf_config.preview_command {
+        base_cmd.arg("--preview").arg(preview_command);
+    }
+
+    // Key bindings
+    for bind in &fzf_config.bind {
+        base_cmd.arg("--bind").arg(bind);
+    }
+
+    // Always enable ANSI colors (can be overridden by config)
+    if !fzf_config.color.as_ref().map_or(false, |c| c.contains("ansi")) {
+        base_cmd.arg("--ansi");
+    }
+
+    // Suppress stderr by default (can be overridden by config)
+    if !fzf_config.bind.iter().any(|b| b.contains("stderr")) {
+        base_cmd.stderr(std::process::Stdio::null());
+    }
 }
 
 fn is_builtin_noisy_command(cmd: &str) -> bool {
@@ -2180,8 +2278,13 @@ fn json_string(s: &str) -> String {
 }
 
 fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
+    // Load fzf configuration
+    let fzf_config = load_fzf_config();
+
     // Check if fzf is available
-    if which("fzf").is_none() {
+    let fzf_binary = fzf_config.binary_path.as_deref()
+        .unwrap_or("fzf");
+    if which(fzf_binary).is_none() {
         anyhow::bail!(
             "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
         );
@@ -2209,17 +2312,14 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
         return Ok(()); // No results to select from
     }
 
-    // Run fzf
-    let mut fzf_cmd = std::process::Command::new("fzf");
+    // Run fzf with configuration
+    let mut fzf_cmd = std::process::Command::new(fzf_binary);
+    build_fzf_command(&mut fzf_cmd, &fzf_config);
+
+    // Override defaults with our specific settings
     fzf_cmd
-        .arg("--ansi") // Enable ANSI color codes
-        .arg("--height=50%") // Use half screen height
         .arg("--preview")
-        .arg(format!("sdbh preview --command {{{{}}}}"))
-        .arg("--preview-window=right:50%")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null()); // Suppress stderr
+        .arg(format!("sdbh preview --command {{{{}}}}"));
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -2227,6 +2327,10 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
     } else {
         fzf_cmd.arg("--no-multi");
     }
+
+    fzf_cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
 
     let mut fzf_process = fzf_cmd.spawn()?;
 
@@ -2270,8 +2374,13 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
 }
 
 fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
+    // Load fzf configuration
+    let fzf_config = load_fzf_config();
+
     // Check if fzf is available
-    if which("fzf").is_none() {
+    let fzf_binary = fzf_config.binary_path.as_deref()
+        .unwrap_or("fzf");
+    if which(fzf_binary).is_none() {
         anyhow::bail!(
             "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
         );
@@ -2299,17 +2408,14 @@ fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
         return Ok(()); // No results to select from
     }
 
-    // Run fzf
-    let mut fzf_cmd = std::process::Command::new("fzf");
+    // Run fzf with configuration
+    let mut fzf_cmd = std::process::Command::new(fzf_binary);
+    build_fzf_command(&mut fzf_cmd, &fzf_config);
+
+    // Override defaults with our specific settings
     fzf_cmd
-        .arg("--ansi") // Enable ANSI color codes
-        .arg("--height=50%") // Use half screen height
         .arg("--preview")
-        .arg(format!("sdbh preview --command {{{{}}}}"))
-        .arg("--preview-window=right:50%")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null()); // Suppress stderr
+        .arg(format!("sdbh preview --command {{{{}}}}"));
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -2317,6 +2423,10 @@ fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
     } else {
         fzf_cmd.arg("--no-multi");
     }
+
+    fzf_cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
 
     let mut fzf_process = fzf_cmd.spawn()?;
 
@@ -2364,8 +2474,14 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
     if args.multi_select && !args.fzf {
         anyhow::bail!("--multi-select requires --fzf flag");
     }
+
+    // Load fzf configuration
+    let fzf_config = load_fzf_config();
+
     // Check if fzf is available
-    if which("fzf").is_none() {
+    let fzf_binary = fzf_config.binary_path.as_deref()
+        .unwrap_or("fzf");
+    if which(fzf_binary).is_none() {
         anyhow::bail!(
             "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
         );
@@ -2405,17 +2521,14 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
         return Ok(()); // No results to select from
     }
 
-    // Run fzf
-    let mut fzf_cmd = std::process::Command::new("fzf");
+    // Run fzf with configuration
+    let mut fzf_cmd = std::process::Command::new(fzf_binary);
+    build_fzf_command(&mut fzf_cmd, &fzf_config);
+
+    // Override defaults with our specific settings
     fzf_cmd
-        .arg("--ansi") // Enable ANSI color codes
-        .arg("--height=50%") // Use half screen height
         .arg("--preview")
-        .arg(format!("sdbh preview --command {{{{}}}}"))
-        .arg("--preview-window=right:50%")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null()); // Suppress stderr
+        .arg(format!("sdbh preview --command {{{{}}}}"));
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -2423,6 +2536,10 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
     } else {
         fzf_cmd.arg("--no-multi");
     }
+
+    fzf_cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
 
     let mut fzf_process = fzf_cmd.spawn()?;
 
