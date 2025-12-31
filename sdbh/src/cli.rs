@@ -115,6 +115,10 @@ pub struct SummaryArgs {
 
     #[arg(long)]
     pub verbose: bool,
+
+    /// Use fzf for interactive selection (outputs selected command to stdout)
+    #[arg(long)]
+    pub fzf: bool,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -163,6 +167,10 @@ pub struct ListArgs {
 
     #[arg(long, conflicts_with = "here")]
     pub under: bool,
+
+    /// Use fzf for interactive selection (outputs selected command to stdout)
+    #[arg(long)]
+    pub fzf: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -201,6 +209,10 @@ pub struct SearchArgs {
 
     #[arg(long, conflicts_with = "here")]
     pub under: bool,
+
+    /// Use fzf for interactive selection (outputs selected command to stdout)
+    #[arg(long)]
+    pub fzf: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -555,6 +567,10 @@ fn location_filter(
 }
 
 fn cmd_summary(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
+    if args.fzf {
+        return cmd_summary_fzf(cfg, args);
+    }
+
     let conn = open_db(&cfg)?;
 
     let (sql, bind) = build_summary_sql(&args)?;
@@ -649,6 +665,10 @@ fn build_summary_sql(args: &SummaryArgs) -> Result<(String, Vec<String>)> {
 }
 
 fn cmd_list(cfg: DbConfig, args: ListArgs) -> Result<()> {
+    if args.fzf {
+        return cmd_list_fzf(cfg, args);
+    }
+
     let conn = open_db(&cfg)?;
     let (sql, bind) = build_list_sql(&args)?;
 
@@ -732,6 +752,10 @@ fn build_list_sql(args: &ListArgs) -> Result<(String, Vec<String>)> {
 }
 
 fn cmd_search(cfg: DbConfig, args: SearchArgs) -> Result<()> {
+    if args.fzf {
+        return cmd_search_fzf(cfg, args);
+    }
+
     let conn = open_db(&cfg)?;
 
     let (sql, bind) = build_search_sql(&args)?;
@@ -2029,6 +2053,237 @@ fn json_string(s: &str) -> String {
     out
 }
 
+fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
+    // Check if fzf is available
+    if which("fzf").is_none() {
+        anyhow::bail!(
+            "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
+        );
+    }
+
+    let conn = open_db(&cfg)?;
+    let (sql, bind) = build_list_sql(&args)?;
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+
+    // Collect items for fzf in a compact format
+    let mut fzf_input = String::new();
+    while let Some(r) = rows.next()? {
+        let dt: String = r.get(1)?;
+        let pwd: String = r.get(2)?;
+        let cmd: String = r.get(3)?;
+
+        // Format: "cmd  (timestamp) [pwd]"
+        // We put cmd first so it's the primary search target
+        fzf_input.push_str(&format!("{}  ({}) [{}]\n", cmd, dt, pwd));
+    }
+
+    if fzf_input.is_empty() {
+        return Ok(()); // No results to select from
+    }
+
+    // Run fzf
+    let mut fzf_cmd = std::process::Command::new("fzf")
+        .arg("--ansi") // Enable ANSI color codes
+        .arg("--no-multi") // Single selection only
+        .arg("--height=50%") // Use half screen height
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null()) // Suppress stderr
+        .spawn()?;
+
+    // Write input to fzf's stdin
+    if let Some(mut stdin) = fzf_cmd.stdin.take() {
+        std::io::Write::write_all(&mut stdin, fzf_input.as_bytes())?;
+        drop(stdin); // Close stdin to signal EOF
+    }
+
+    // Wait for fzf to complete and get output
+    let output = fzf_cmd.wait_with_output()?;
+
+    if !output.status.success() {
+        // User cancelled selection (Ctrl+C) or fzf failed
+        return Ok(());
+    }
+
+    // Extract the selected command (everything before the first "  (")
+    let selected = String::from_utf8_lossy(&output.stdout);
+    let selected = selected.trim();
+
+    if selected.is_empty() {
+        return Ok(());
+    }
+
+    // Extract command from the fzf format: "cmd  (timestamp) [pwd]"
+    if let Some(cmd_end) = selected.find("  (") {
+        let cmd = &selected[..cmd_end];
+        println!("{}", cmd);
+    }
+
+    Ok(())
+}
+
+fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
+    // Check if fzf is available
+    if which("fzf").is_none() {
+        anyhow::bail!(
+            "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
+        );
+    }
+
+    let conn = open_db(&cfg)?;
+    let (sql, bind) = build_search_sql(&args)?;
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+
+    // Collect items for fzf in a compact format
+    let mut fzf_input = String::new();
+    while let Some(r) = rows.next()? {
+        let dt: String = r.get(1)?;
+        let pwd: String = r.get(2)?;
+        let cmd: String = r.get(3)?;
+
+        // Format: "cmd  (timestamp) [pwd]"
+        // We put cmd first so it's the primary search target
+        fzf_input.push_str(&format!("{}  ({}) [{}]\n", cmd, dt, pwd));
+    }
+
+    if fzf_input.is_empty() {
+        return Ok(()); // No results to select from
+    }
+
+    // Run fzf
+    let mut fzf_cmd = std::process::Command::new("fzf")
+        .arg("--ansi") // Enable ANSI color codes
+        .arg("--no-multi") // Single selection only
+        .arg("--height=50%") // Use half screen height
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null()) // Suppress stderr
+        .spawn()?;
+
+    // Write input to fzf's stdin
+    if let Some(mut stdin) = fzf_cmd.stdin.take() {
+        std::io::Write::write_all(&mut stdin, fzf_input.as_bytes())?;
+        drop(stdin); // Close stdin to signal EOF
+    }
+
+    // Wait for fzf to complete and get output
+    let output = fzf_cmd.wait_with_output()?;
+
+    if !output.status.success() {
+        // User cancelled selection (Ctrl+C) or fzf failed
+        return Ok(());
+    }
+
+    // Extract the selected command (everything before the first "  (")
+    let selected = String::from_utf8_lossy(&output.stdout);
+    let selected = selected.trim();
+
+    if selected.is_empty() {
+        return Ok(());
+    }
+
+    // Extract command from the fzf format: "cmd  (timestamp) [pwd]"
+    if let Some(cmd_end) = selected.find("  (") {
+        let cmd = &selected[..cmd_end];
+        println!("{}", cmd);
+    }
+
+    Ok(())
+}
+
+fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
+    // Check if fzf is available
+    if which("fzf").is_none() {
+        anyhow::bail!(
+            "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
+        );
+    }
+
+    let conn = open_db(&cfg)?;
+    let (sql, bind) = build_summary_sql(&args)?;
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(bind.iter()))?;
+
+    // Collect items for fzf in a compact format
+    let mut fzf_input = String::new();
+    while let Some(r) = rows.next()? {
+        let _id_max: i64 = r.get(0)?;
+        let dt: String = r.get(1)?;
+        let count: i64 = r.get(2)?;
+        let cmd: String = r.get(3)?;
+        let pwd_part = if args.pwd {
+            if let Ok(pwd) = r.get::<_, String>(4) {
+                format!(" [{}]", pwd)
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        // Format: "cmd  (count uses, last: timestamp) [pwd]"
+        fzf_input.push_str(&format!(
+            "{}{}  ({} uses, last: {})\n",
+            cmd, pwd_part, count, dt
+        ));
+    }
+
+    if fzf_input.is_empty() {
+        return Ok(()); // No results to select from
+    }
+
+    // Run fzf
+    let mut fzf_cmd = std::process::Command::new("fzf")
+        .arg("--ansi") // Enable ANSI color codes
+        .arg("--no-multi") // Single selection only
+        .arg("--height=50%") // Use half screen height
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null()) // Suppress stderr
+        .spawn()?;
+
+    // Write input to fzf's stdin
+    if let Some(mut stdin) = fzf_cmd.stdin.take() {
+        std::io::Write::write_all(&mut stdin, fzf_input.as_bytes())?;
+        drop(stdin); // Close stdin to signal EOF
+    }
+
+    // Wait for fzf to complete and get output
+    let output = fzf_cmd.wait_with_output()?;
+
+    if !output.status.success() {
+        // User cancelled selection (Ctrl+C) or fzf failed
+        return Ok(());
+    }
+
+    // Extract the selected command (everything before the first "  (")
+    let selected = String::from_utf8_lossy(&output.stdout);
+    let selected = selected.trim();
+
+    if selected.is_empty() {
+        return Ok(());
+    }
+
+    // Extract command from the fzf format: "cmd [pwd]  (count uses, last: timestamp)"
+    if let Some(cmd_end) = selected.find("  (") {
+        let cmd_part = &selected[..cmd_end];
+        // Remove pwd part if present: "cmd [pwd]" -> "cmd"
+        let cmd = if let Some(bracket_start) = cmd_part.find(" [") {
+            cmd_part[..bracket_start].trim()
+        } else {
+            cmd_part.trim()
+        };
+        println!("{}", cmd);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2051,6 +2306,7 @@ mod tests {
             here: false,
             under: false,
             verbose: false,
+            fzf: false,
         };
         let (_sql, bind) = build_summary_sql(&args).unwrap();
         // --all means unlimited, so limit should be u32::MAX
@@ -2070,6 +2326,7 @@ mod tests {
             here: false,
             under: false,
             verbose: false,
+            fzf: false,
         };
         let (_sql, bind) = build_summary_sql(&args).unwrap();
         assert_eq!(bind.last().unwrap(), "5");

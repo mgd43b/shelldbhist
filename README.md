@@ -6,6 +6,7 @@ It’s inspired by `dbhist.sh`, but implemented as a portable Rust CLI backed by
 ## Features
 - Local SQLite history database (`~/.sdbh.sqlite` by default)
 - Fast search (substring), raw history listing, grouped summaries
+- **Interactive fuzzy selection** with fzf integration (`--fzf` flags)
 - Stats (top commands, by-directory, daily buckets)
 - Database health monitoring and performance optimization
 - Import/merge from existing `dbhist.sh` SQLite databases
@@ -115,6 +116,9 @@ sdbh search kubectl --all --format json --limit 10
 # time filtering
 sdbh search kubectl --all --days 30
 sdbh search kubectl --all --since-epoch 1700000000
+
+# Interactive fuzzy selection
+sdbh search kubectl --fzf
 ```
 
 ### Summary
@@ -123,6 +127,9 @@ Grouped-by-command output (count + last run):
 sdbh summary git
 sdbh summary --starts git
 sdbh summary --pwd --under
+
+# Interactive fuzzy selection from command summaries
+sdbh summary --fzf
 ```
 
 ### List
@@ -130,6 +137,9 @@ Raw history (latest first):
 ```bash
 sdbh list --all --limit 50
 sdbh list --all --format json
+
+# Interactive fuzzy selection
+sdbh list --fzf
 ```
 
 ### Stats
@@ -175,6 +185,105 @@ Diagnose your setup (DB access, env vars, and shell integration):
 sdbh doctor
 sdbh doctor --no-spawn
 sdbh doctor --format json
+```
+
+## Interactive Fuzzy Selection
+
+`sdbh` integrates with [fzf](https://github.com/junegun/fzf) for interactive command selection. Add the `--fzf` flag to any search, list, or summary command to launch an interactive fuzzy finder.
+
+### Requirements
+- Install [fzf](https://github.com/junegun/fzf) (available via most package managers)
+
+### Basic Usage
+
+**Command History Selection:**
+```bash
+# Browse recent commands interactively
+sdbh list --fzf
+
+# Search and select from matching commands
+sdbh search "git" --fzf
+
+# Select from command summaries
+sdbh summary --fzf
+```
+
+**Output Format:**
+When you select a command in fzf, it prints the command to stdout, ready for execution:
+```bash
+$ sdbh search kubectl --fzf
+kubectl get pods -n kube-system
+```
+
+### Advanced Shell Integration
+
+Add these functions to your `~/.bashrc` or `~/.zshrc` for enhanced fzf integration:
+
+**Bash/Zsh: Enhanced History Search (Ctrl+R replacement)**
+```bash
+# sdbh-powered history search
+sdbh-fzf-history() {
+  local selected
+  selected=$(sdbh list --all --fzf 2>/dev/null)
+  if [[ -n "$selected" ]]; then
+    READLINE_LINE="$selected"
+    READLINE_POINT=${#selected}
+  fi
+}
+
+# Bind to Ctrl+R in bash
+bind -x '"\C-r": sdbh-fzf-history'
+
+# Bind to Ctrl+R in zsh
+bindkey '^R' sdbh-fzf-history
+```
+
+**Bash/Zsh: Command Templates**
+```bash
+# Search for git commands
+sdbh-git() {
+  local cmd
+  cmd=$(sdbh search "git" --all --fzf 2>/dev/null)
+  if [[ -n "$cmd" ]]; then
+    echo "Executing: $cmd"
+    eval "$cmd"
+  fi
+}
+
+# Search for docker commands
+sdbh-docker() {
+  local cmd
+  cmd=$(sdbh search "docker" --all --fzf 2>/dev/null)
+  if [[ -n "$cmd" ]]; then
+    echo "Executing: $cmd"
+    eval "$cmd"
+  fi
+}
+
+# Interactive summary selection
+sdbh-summary() {
+  local cmd
+  cmd=$(sdbh summary --all --fzf 2>/dev/null)
+  if [[ -n "$cmd" ]]; then
+    echo "Executing: $cmd"
+    eval "$cmd"
+  fi
+}
+```
+
+**Zsh: Custom Widgets**
+```bash
+# Zsh widget for sdbh history
+sdbh-history-widget() {
+  local selected
+  selected=$(sdbh list --all --fzf 2>/dev/null)
+  if [[ -n "$selected" ]]; then
+    LBUFFER="$selected"
+  fi
+  zle reset-prompt
+}
+zle -N sdbh-history-widget
+bindkey '^R' sdbh-history-widget
 ```
 
 ## Troubleshooting
