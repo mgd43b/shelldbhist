@@ -85,11 +85,12 @@
 ## Interactive Fuzzy Selection (fzf integration)
 - **fzf detection and execution**: Commands check for fzf availability and fail gracefully if not installed
 - **Three command integration points**: `list --fzf`, `search --fzf`, `summary --fzf` all support interactive selection
-- **Preview pane**: Right-side preview (50% width) shows command statistics when hovering
+- **Preview pane**: Right-side preview showing command statistics when hovering in fzf
 - **Multi-select support**: `--multi-select` flag enables Tab-based multi-selection in fzf
 - **Custom fzf configuration**: Comprehensive `~/.sdbh.toml` support for all fzf options
 - **Configuration options**: Height, layout, borders, colors, key bindings, preview settings, binary path
 - **Graceful fallbacks**: Works perfectly without configuration, invalid configs ignored
+- **Ctrl+R history integration**: Complete shell integration examples for bash/zsh Ctrl+R replacement
 - **Compact output formats**: Optimized for fzf readability:
   - List/search: `"command  (timestamp) [directory]"`
   - Summary: `"command [directory]  (count uses, last: timestamp)"`
