@@ -7,8 +7,12 @@ It’s inspired by `dbhist.sh`, but implemented as a portable Rust CLI backed by
 - Local SQLite history database (`~/.sdbh.sqlite` by default)
 - Fast search (substring), raw history listing, grouped summaries
 - **Interactive fuzzy selection** with fzf integration (`--fzf` flags)
+- **Customizable fzf experience** via `~/.sdbh.toml` configuration
+- **Multi-select fzf** support with `--multi-select` flag
+- **fzf preview pane** showing command statistics and usage patterns
 - Stats (top commands, by-directory, daily buckets)
 - Database health monitoring and performance optimization
+- **Comprehensive test coverage** (60.6% CLI coverage, 53 integration tests)
 - Import/merge from existing `dbhist.sh` SQLite databases
 - Import from shell history files (`.bash_history`, `.zsh_history`)
 
