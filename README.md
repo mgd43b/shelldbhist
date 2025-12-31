@@ -286,26 +286,35 @@ sdbh doctor --format json
 ```
 
 ### Command Templates System
-`sdbh` includes a powerful Command Templates System for defining reusable command patterns with variable substitution. This feature is currently in infrastructure setup phase for v0.12.0.
+`sdbh` includes a powerful Command Templates System for defining reusable command patterns with variable substitution. Templates are stored as TOML files in `~/.sdbh/templates/` and support variable substitution with defaults and validation.
 
-#### Template Definition (Coming in v0.12.0)
-Define reusable command patterns in `~/.sdbh.toml`:
+#### Creating Templates
+Templates are TOML files in `~/.sdbh/templates/`. Create a template file like `~/.sdbh/templates/git-commit.toml`:
 
 ```toml
-[templates.git-commit]
+id = "git-commit"
+name = "Git Commit"
 description = "Git commit with conventional format"
 command = "git add . && git commit -m '{type}: {message}'"
-variables = ["type", "message"]
-default_values = { type = "feat" }
 
-[templates.docker-deploy]
-description = "Deploy to Docker environment"
-command = "docker build -t {image}:{tag} . && docker push {image}:{tag} && kubectl set image deployment/{deployment} app={image}:{tag}"
-variables = ["image", "tag", "deployment"]
-default_values = { tag = "latest" }
+[[variables]]
+name = "type"
+description = "Commit type (feat, fix, docs, etc.)"
+required = true
+
+[[variables]]
+name = "message"
+description = "Commit message"
+required = true
+
+[[variables]]
+name = "scope"
+description = "Optional scope"
+required = false
+default = ""
 ```
 
-#### Usage (CLI structure ready for v0.12.0)
+#### Template Usage
 ```bash
 # List all available templates
 sdbh template --list
@@ -313,14 +322,80 @@ sdbh template --list
 # Execute a template with variable substitution
 sdbh template git-commit --var type=feat --var message="add new feature"
 
-# Interactive template selection with fzf
-sdbh template --fzf
-
-# Create or edit templates interactively
-sdbh template --create git-workflow
+# Execute with defaults (interactive prompts for missing required variables)
+sdbh template git-commit --var message="fix bug"
 
 # Delete a template
-sdbh template --delete old-template
+sdbh template --delete git-commit
+
+# Interactive template creation (requires terminal)
+sdbh template --create my-template
+```
+
+#### Template Variables
+- **Required variables**: Must be provided via `--var` or will prompt interactively
+- **Optional variables**: Can use `default` values or be left empty
+- **Variable substitution**: Use `{variable_name}` in command templates
+- **Validation**: Variable names must be alphanumeric with underscores
+
+#### Example Templates
+**Docker Build & Deploy:**
+```toml
+id = "docker-deploy"
+name = "Docker Deploy"
+description = "Build and deploy Docker image"
+command = "docker build -t {image}:{tag} . && docker push {image}:{tag} && kubectl set image deployment/{deployment} app={image}:{tag}"
+
+[[variables]]
+name = "image"
+description = "Docker image name"
+required = true
+
+[[variables]]
+name = "tag"
+description = "Image tag"
+required = false
+default = "latest"
+
+[[variables]]
+name = "deployment"
+description = "Kubernetes deployment name"
+required = true
+```
+
+**API Testing:**
+```toml
+id = "api-test"
+name = "API Test"
+description = "Test API endpoint"
+command = "curl -X {method} '{base_url}/api/v{version}/{endpoint}' -H 'Authorization: Bearer {token}'"
+
+[[variables]]
+name = "method"
+description = "HTTP method"
+required = false
+default = "GET"
+
+[[variables]]
+name = "base_url"
+description = "API base URL"
+required = true
+
+[[variables]]
+name = "version"
+description = "API version"
+required = false
+default = "1"
+
+[[variables]]
+name = "endpoint"
+description = "API endpoint"
+required = true
+
+[[variables]]
+name = "token"
+description = "Auth token"
+required = true
 ```
 
 ## Interactive Fuzzy Selection

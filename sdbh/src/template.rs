@@ -227,16 +227,20 @@ impl TemplateEngine {
             resolved_vars.insert(key.clone(), value.clone());
         }
 
+        // Apply defaults for variables that don't have values yet
+        for var in &template.variables {
+            if !resolved_vars.contains_key(&var.name) {
+                if let Some(default) = &var.default {
+                    resolved_vars.insert(var.name.clone(), default.clone());
+                }
+            }
+        }
+
         // Collect missing required variables that need prompting
         let mut missing_vars = Vec::new();
         for var in &template.variables {
             if var.required && !resolved_vars.contains_key(&var.name) {
-                if var.default.is_none() {
-                    missing_vars.push(var.clone());
-                } else {
-                    // Use variable's default if template default not set
-                    resolved_vars.insert(var.name.clone(), var.default.as_ref().unwrap().clone());
-                }
+                missing_vars.push(var.clone());
             }
         }
 
