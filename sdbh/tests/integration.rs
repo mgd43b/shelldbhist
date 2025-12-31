@@ -1872,8 +1872,7 @@ fn preview_shows_command_statistics() {
         .stdout(predicate::str::contains("Command: git status"))
         .stdout(predicate::str::contains("Total uses: 3"))
         .stdout(predicate::str::contains("Unique directories: 3"))
-        .stdout(predicate::str::contains("Recent directories:"))
-        .stdout(predicate::str::contains("Recent executions:"));
+        .stdout(predicate::str::contains("🕒 Recent Executions:"));
 }
 
 #[test]
@@ -3016,6 +3015,7 @@ fn preview_enhanced_directory_usage() {
                 "--db",
                 db.to_string_lossy().as_ref(),
                 "log",
+                "--no-filter",
                 "--cmd",
                 "ls -la",
                 "--epoch",
@@ -3068,6 +3068,7 @@ fn preview_enhanced_command_type_detection() {
                 "--db",
                 db.to_string_lossy().as_ref(),
                 "log",
+                "--no-filter",
                 "--cmd",
                 cmd,
                 "--epoch",

@@ -2385,16 +2385,44 @@ fn show_make_info(_conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
 fn show_related_commands(
     conn: &rusqlite::Connection,
     base_cmd: &str,
-    cmd_type: CommandType,
+    _cmd_type: CommandType,
 ) -> Result<()> {
     // Find commands that share the same base command or are commonly used together
+    let first_word = base_cmd.split_whitespace().next().unwrap_or("");
 
-    // For now, keep this simple and just return without showing related commands
-    // to avoid SQL complexity issues. This can be enhanced later.
-    let _ = (conn, base_cmd, cmd_type); // Suppress unused variable warnings
+    // Query for other commands that start with the same tool, ordered by most recent usage
+    let sql = r#"
+        SELECT cmd, MAX(epoch) as latest_epoch
+        FROM history
+        WHERE cmd LIKE ?1 || ' %'
+          AND cmd != ?2
+        GROUP BY cmd
+        ORDER BY latest_epoch DESC
+        LIMIT 3
+    "#;
 
-    // TODO: Implement related commands feature
-    // Currently disabled to avoid SQL query issues in tests
+    let mut stmt = conn.prepare(sql)?;
+    let like_pattern = format!("{} %", escape_like(first_word));
+    let mut rows = stmt.query([&like_pattern, base_cmd])?;
+
+    let mut related = Vec::new();
+    while let Some(row) = rows.next()? {
+        let cmd: String = row.get(0)?;
+        related.push(cmd);
+    }
+
+    if !related.is_empty() {
+        println!("\n🔗 Related Commands");
+        for cmd in related.iter().take(3) {
+            // Truncate long commands for display
+            let display_cmd = if cmd.len() > 60 {
+                format!("{}...", &cmd[..57])
+            } else {
+                cmd.clone()
+            };
+            println!("  {}", display_cmd);
+        }
+    }
 
     Ok(())
 }
