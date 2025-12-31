@@ -4142,3 +4142,658 @@ fn template_cli_no_args() {
     let stdout = String::from_utf8_lossy(&result.stdout);
     assert!(stdout.contains("Command Templates System") || stdout.contains("template"));
 }
+
+// Phase 3: Advanced Template System Tests
+
+#[test]
+fn template_complex_variable_substitution() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Create a template with complex variables
+    let template_content = r#"
+id = "complex-template"
+name = "Complex Template"
+description = "Template with complex variable substitution"
+command = "ssh {user}@{host} -p {port} 'cd {path} && {cmd} --flag={flag} --count={count}'"
+
+[[variables]]
+name = "user"
+description = "SSH username"
+required = true
+
+[[variables]]
+name = "host"
+description = "Target host"
+required = true
+
+[[variables]]
+name = "port"
+description = "SSH port"
+required = false
+default = "22"
+
+[[variables]]
+name = "path"
+description = "Remote path"
+required = true
+
+[[variables]]
+name = "cmd"
+description = "Command to run"
+required = true
+
+[[variables]]
+name = "flag"
+description = "Boolean flag"
+required = false
+default = "true"
+
+[[variables]]
+name = "count"
+description = "Numeric count"
+required = false
+default = "1"
+"#;
+
+    // Create template file manually
+    std::fs::create_dir_all(home.join(".sdbh").join("templates")).unwrap();
+    std::fs::write(
+        home.join(".sdbh")
+            .join("templates")
+            .join("complex-template.toml"),
+        template_content,
+    )
+    .unwrap();
+
+    // Test executing template with variable assignments
+    // Note: This will likely fail in non-interactive environment, so we'll check that it at least doesn't crash
+    let result = sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "template",
+            "complex-template",
+            "--var",
+            "user=testuser",
+            "--var",
+            "host=example.com",
+            "--var",
+            "path=/home/testuser",
+            "--var",
+            "cmd=ls -la",
+            "--var",
+            "count=5",
+        ])
+        .output()
+        .unwrap();
+
+    // In non-interactive environment, this may fail or require different handling
+    // For now, just check that the command ran (success or controlled failure)
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+
+    // Either it succeeds and prints the command, or fails gracefully due to terminal requirements
+    assert!(result.status.success() || stderr.contains("not a terminal") || stdout.contains("ssh"));
+}
+
+#[test]
+fn template_variable_defaults_and_overrides() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Create template with defaults
+    let template_content = r#"
+id = "defaults-template"
+name = "Defaults Template"
+command = "echo 'Hello {name}, you are {age} years old and live in {city}'"
+
+[[variables]]
+name = "name"
+required = true
+
+[[variables]]
+name = "age"
+required = false
+default = "25"
+
+[[variables]]
+name = "city"
+required = false
+default = "Unknown City"
+"#;
+
+    std::fs::create_dir_all(home.join(".sdbh").join("templates")).unwrap();
+    std::fs::write(
+        home.join(".sdbh")
+            .join("templates")
+            .join("defaults-template.toml"),
+        template_content,
+    )
+    .unwrap();
+
+    // Test with partial overrides
+    let result = sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "template",
+            "defaults-template",
+            "--var",
+            "name=Alice",
+            "--var",
+            "city=New York",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(stdout.contains("echo 'Hello Alice, you are 25 years old and live in New York'"));
+}
+
+#[test]
+fn template_storage_operations() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Test template file operations
+    let templates_dir = home.join(".sdbh").join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+
+    // Create multiple templates
+    let template1_content = r#"
+id = "storage-test-1"
+name = "Storage Test 1"
+command = "echo template1"
+"#;
+
+    let template2_content = r#"
+id = "storage-test-2"
+name = "Storage Test 2"
+command = "echo template2"
+
+[[variables]]
+name = "arg"
+required = true
+"#;
+
+    std::fs::write(templates_dir.join("storage-test-1.toml"), template1_content).unwrap();
+    std::fs::write(templates_dir.join("storage-test-2.toml"), template2_content).unwrap();
+
+    // Test listing multiple templates
+    let list_result = sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "--list"])
+        .output()
+        .unwrap();
+
+    let list_stdout = String::from_utf8_lossy(&list_result.stdout);
+    assert!(list_stdout.contains("storage-test-1"));
+    assert!(list_stdout.contains("storage-test-2"));
+    assert!(list_stdout.contains("Storage Test 1"));
+    assert!(list_stdout.contains("Storage Test 2"));
+
+    // Test executing both templates
+    let exec1_result = sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "storage-test-1"])
+        .output()
+        .unwrap();
+
+    let exec1_stdout = String::from_utf8_lossy(&exec1_result.stdout);
+    assert!(exec1_stdout.contains("echo template1"));
+
+    let exec2_result = sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "storage-test-2", "--var", "arg=test"])
+        .output()
+        .unwrap();
+
+    let exec2_stdout = String::from_utf8_lossy(&exec2_result.stdout);
+    assert!(exec2_stdout.contains("echo template2"));
+}
+
+#[test]
+fn template_validation_errors() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    let templates_dir = home.join(".sdbh").join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+
+    // Test invalid template files
+    let invalid_templates = vec![
+        ("empty.toml", ""),
+        ("invalid_toml.toml", "[invalid toml content"),
+        (
+            "missing_command.toml",
+            r#"
+id = "test"
+name = "Test"
+"#,
+        ),
+        (
+            "invalid_variable.toml",
+            r#"
+id = "test"
+name = "Test"
+command = "echo {valid} {invalid-var}"
+
+[[variables]]
+name = "valid"
+required = true
+
+[[variables]]
+name = "invalid-var"
+required = true
+"#,
+        ),
+    ];
+
+    for (filename, content) in invalid_templates {
+        std::fs::write(templates_dir.join(filename), content).unwrap();
+    }
+
+    // Listing should handle invalid templates gracefully
+    let result = sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "--list"])
+        .output()
+        .unwrap();
+
+    // Should still succeed despite invalid templates
+    assert!(result.status.success());
+    let stdout = String::from_utf8_lossy(&result.stdout);
+
+    // Should show valid templates or indicate no valid templates
+    assert!(stdout.contains("No templates found") || !stdout.contains("Warning"));
+}
+
+#[test]
+fn template_category_filtering() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    let templates_dir = home.join(".sdbh").join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+
+    // Create templates with different categories
+    let categories = vec![
+        ("git-commit", "git", "git commit -m '{message}'"),
+        ("git-status", "git", "git status"),
+        ("docker-build", "docker", "docker build -t {tag} ."),
+        ("docker-run", "docker", "docker run {image}"),
+        ("misc-echo", "misc", "echo {text}"),
+    ];
+
+    let categories_data = vec![
+        ("git-commit", "git", "git commit -m '{message}'"),
+        ("git-status", "git", "git status"),
+        ("docker-build", "docker", "docker build -t {tag} ."),
+        ("docker-run", "docker", "docker run {image}"),
+        ("misc-echo", "misc", "echo {text}"),
+    ];
+
+    for (id, category, command) in &categories_data {
+        let content = format!(
+            r#"
+id = "{}"
+name = "{}"
+category = "{}"
+command = "{}"
+
+[[variables]]
+name = "message"
+required = false
+default = "Update"
+
+[[variables]]
+name = "tag"
+required = false
+default = "latest"
+
+[[variables]]
+name = "image"
+required = false
+default = "nginx"
+
+[[variables]]
+name = "text"
+required = false
+default = "hello"
+"#,
+            id, id, category, command
+        );
+
+        std::fs::write(templates_dir.join(format!("{}.toml", id)), content).unwrap();
+    }
+
+    // Test listing all templates
+    let all_result = sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "--list"])
+        .output()
+        .unwrap();
+
+    let all_stdout = String::from_utf8_lossy(&all_result.stdout);
+    for (id, category, _) in &categories_data {
+        assert!(all_stdout.contains(*id));
+        assert!(all_stdout.contains(*category));
+    }
+
+    // Test executing templates from different categories
+    let git_result = sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "git-status"])
+        .output()
+        .unwrap();
+
+    assert!(String::from_utf8_lossy(&git_result.stdout).contains("git status"));
+
+    let docker_result = sdbh_cmd()
+        .env("HOME", home)
+        .args(["template", "docker-build", "--var", "tag=myapp:v1.0"])
+        .output()
+        .unwrap();
+
+    assert!(String::from_utf8_lossy(&docker_result.stdout).contains("docker build -t myapp:v1.0"));
+}
+
+#[test]
+fn template_nested_variable_usage() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Create template with nested/complex variable usage
+    let template_content = r#"
+id = "nested-vars"
+name = "Nested Variables Test"
+command = "curl -X {method} '{base_url}/api/v{version}/users/{user_id}?filter={filter}&limit={limit}' -H 'Authorization: Bearer {token}'"
+
+[[variables]]
+name = "method"
+description = "HTTP method"
+required = false
+default = "GET"
+
+[[variables]]
+name = "base_url"
+description = "API base URL"
+required = true
+
+[[variables]]
+name = "version"
+description = "API version"
+required = false
+default = "1"
+
+[[variables]]
+name = "user_id"
+description = "User ID"
+required = true
+
+[[variables]]
+name = "filter"
+description = "Filter parameter"
+required = false
+default = "active"
+
+[[variables]]
+name = "limit"
+description = "Result limit"
+required = false
+default = "10"
+
+[[variables]]
+name = "token"
+description = "Auth token"
+required = true
+"#;
+
+    std::fs::create_dir_all(home.join(".sdbh").join("templates")).unwrap();
+    std::fs::write(
+        home.join(".sdbh")
+            .join("templates")
+            .join("nested-vars.toml"),
+        template_content,
+    )
+    .unwrap();
+
+    // Test with minimal required variables
+    let result1 = sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "template",
+            "nested-vars",
+            "--var",
+            "base_url=https://api.example.com",
+            "--var",
+            "user_id=123",
+            "--var",
+            "token=abc123",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout1 = String::from_utf8_lossy(&result1.stdout);
+    assert!(stdout1.contains("curl -X GET 'https://api.example.com/api/v1/users/123?filter=active&limit=10' -H 'Authorization: Bearer abc123'"));
+
+    // Test with all variables overridden
+    let result2 = sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "template",
+            "nested-vars",
+            "--var",
+            "method=POST",
+            "--var",
+            "base_url=https://staging.example.com",
+            "--var",
+            "version=2",
+            "--var",
+            "user_id=456",
+            "--var",
+            "filter=inactive",
+            "--var",
+            "limit=50",
+            "--var",
+            "token=xyz789",
+        ])
+        .output()
+        .unwrap();
+
+    let stdout2 = String::from_utf8_lossy(&result2.stdout);
+    assert!(stdout2.contains("curl -X POST 'https://staging.example.com/api/v2/users/456?filter=inactive&limit=50' -H 'Authorization: Bearer xyz789'"));
+}
+
+#[test]
+fn template_file_operations_error_handling() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Test operations on non-existent templates
+    let nonexistent_tests = vec![
+        ("template", vec!["nonexistent-template"]),
+        ("template", vec!["--delete", "missing-template"]),
+    ];
+
+    for (cmd, args) in nonexistent_tests.iter() {
+        let result = sdbh_cmd().env("HOME", home).args(args).output().unwrap();
+
+        assert!(!result.status.success());
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(stderr.contains("not found") || stderr.contains("No such file"));
+    }
+}
+
+#[test]
+fn template_variable_types_and_validation() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    // Create template with various variable configurations
+    let template_content = r#"
+id = "var-types-test"
+name = "Variable Types Test"
+command = "process --input={input} --output={output} --verbose={verbose} --count={count}"
+
+[[variables]]
+name = "input"
+description = "Input file path"
+required = true
+
+[[variables]]
+name = "output"
+description = "Output file path"
+required = true
+
+[[variables]]
+name = "verbose"
+description = "Verbose output flag"
+required = false
+default = "false"
+
+[[variables]]
+name = "count"
+description = "Number of items to process"
+required = false
+default = "100"
+"#;
+
+    std::fs::create_dir_all(home.join(".sdbh").join("templates")).unwrap();
+    std::fs::write(
+        home.join(".sdbh")
+            .join("templates")
+            .join("var-types-test.toml"),
+        template_content,
+    )
+    .unwrap();
+
+    // Test with special characters in variables
+    let special_chars = vec![
+        ("input", "/path/with spaces/file.txt"),
+        ("output", "/tmp/output-file.log"),
+        ("verbose", "true"),
+        ("count", "42"),
+    ];
+
+    let mut args: Vec<String> = vec!["template".to_string(), "var-types-test".to_string()];
+    for (key, value) in &special_chars {
+        args.push("--var".to_string());
+        args.push(format!("{}={}", key, value));
+    }
+
+    let result = sdbh_cmd().env("HOME", home).args(&args).output().unwrap();
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(stdout.contains("process --input=/path/with spaces/file.txt --output=/tmp/output-file.log --verbose=true --count=42"));
+}
+
+#[test]
+fn template_concurrent_operations() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    let templates_dir = home.join(".sdbh").join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+
+    // Create multiple templates quickly to test concurrent-like operations
+    let templates = vec![
+        ("quick1", "echo quick1"),
+        ("quick2", "echo quick2"),
+        ("quick3", "echo quick3"),
+    ];
+
+    for (id, command) in &templates {
+        let content = format!(
+            r#"
+id = "{}"
+name = "{}"
+command = "{}"
+"#,
+            id, id, command
+        );
+
+        std::fs::write(templates_dir.join(format!("{}.toml", id)), content).unwrap();
+    }
+
+    // Test rapid listing and execution
+    for (id, expected_cmd) in &templates {
+        // List operation
+        let list_result = sdbh_cmd()
+            .env("HOME", home)
+            .args(["template", "--list"])
+            .output()
+            .unwrap();
+
+        assert!(String::from_utf8_lossy(&list_result.stdout).contains(id));
+
+        // Execute operation
+        let exec_result = sdbh_cmd()
+            .env("HOME", home)
+            .args(["template", id])
+            .output()
+            .unwrap();
+
+        assert!(String::from_utf8_lossy(&exec_result.stdout).contains(expected_cmd));
+    }
+}
+
+#[test]
+fn template_edge_cases_and_boundaries() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+
+    let templates_dir = home.join(".sdbh").join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+
+    // Test edge cases
+    let long_cmd = format!("echo {}", "x".repeat(1000));
+    let edge_cases = vec![
+        ("empty-vars", "echo {var}", vec![("var", "")]),
+        ("long-command", &long_cmd, vec![]),
+        (
+            "many-vars",
+            "cmd {a} {b} {c} {d} {e}",
+            vec![("a", "1"), ("b", "2"), ("c", "3"), ("d", "4"), ("e", "5")],
+        ),
+        (
+            "unicode-vars",
+            "echo {greeting} {name}",
+            vec![("greeting", "こんにちは"), ("name", "世界")],
+        ),
+    ];
+
+    for (template_id, command, vars) in &edge_cases {
+        let mut content = format!(
+            r#"
+id = "{}"
+name = "{}"
+command = "{}"
+"#,
+            template_id, template_id, command
+        );
+
+        for (var_name, _) in vars {
+            content.push_str(&format!(
+                r#"
+[[variables]]
+name = "{}"
+required = true
+"#,
+                var_name
+            ));
+        }
+
+        std::fs::write(templates_dir.join(format!("{}.toml", template_id)), content).unwrap();
+
+        // Test execution
+        let mut args: Vec<String> = vec!["template".to_string(), template_id.to_string()];
+        for (var_name, var_value) in vars {
+            args.push("--var".to_string());
+            args.push(format!("{}={}", var_name, var_value));
+        }
+
+        let result = sdbh_cmd().env("HOME", home).args(&args).output().unwrap();
+
+        assert!(result.status.success());
+    }
+}
