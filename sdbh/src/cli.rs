@@ -589,6 +589,11 @@ fn location_filter(
 }
 
 fn cmd_summary(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
+    // Check if multi_select was requested but not fzf
+    if args.multi_select && !args.fzf {
+        anyhow::bail!("--multi-select requires --fzf flag");
+    }
+
     if args.fzf {
         return cmd_summary_fzf(cfg, args);
     }
@@ -1927,15 +1932,22 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
 
     let mut rows = stmt.query([args.command.as_str()])?;
     if let Some(row) = rows.next()? {
-        let total_uses: i64 = row.get(0)?;
-        let last_used_epoch: i64 = row.get(1)?;
-        let first_used_epoch: i64 = row.get(2)?;
-        let unique_dirs: i64 = row.get(3)?;
-        let dirs: Option<String> = row.get(4)?;
+        // Handle NULL values from aggregate functions
+        let total_uses: i64 = row.get(0).unwrap_or(0);
+        let last_used_epoch: Option<i64> = row.get(1).ok();
+        let first_used_epoch: Option<i64> = row.get(2).ok();
+        let unique_dirs: i64 = row.get(3).unwrap_or(0);
+        let dirs: Option<String> = row.get(4).ok();
+
+        // If no uses, show not found message
+        if total_uses == 0 {
+            println!("Command '{}' not found in history", args.command);
+            return Ok(());
+        }
 
         // Format timestamps
-        let last_used = format_timestamp(last_used_epoch);
-        let first_used = format_timestamp(first_used_epoch);
+        let last_used = last_used_epoch.map(format_timestamp).unwrap_or_else(|| "Never".to_string());
+        let first_used = first_used_epoch.map(format_timestamp).unwrap_or_else(|| "Never".to_string());
 
         println!("Command: {}", args.command);
         println!("Total uses: {}", total_uses);
