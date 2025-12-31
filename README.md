@@ -510,6 +510,28 @@ For bash hook mode, `HISTTIMEFORMAT="%s "` is required so `history 1` includes a
   eval "$(sdbh shell --bash)"
   ```
 
+## Development
+
+### Pre-commit Quality Checks
+This project uses a git pre-commit hook to enforce code quality standards:
+
+- **Formatting**: `cargo fmt --check` ensures code follows Rust formatting standards
+- **Linting**: `cargo clippy -- -D warnings` treats all clippy warnings as errors
+
+The hook automatically runs on every commit and will prevent commits that don't meet these standards.
+
+To set up the hook for your local development:
+```bash
+# The hook is already configured in .git/hooks/pre-commit
+# Make sure it's executable (should be by default)
+chmod +x .git/hooks/pre-commit
+```
+
+To bypass the hook for special cases (not recommended):
+```bash
+git commit --no-verify -m "your commit message"
+```
+
 ## Project documentation
 - Release process: `docs/releasing.md`
 - Development notes: `docs/development.md`
