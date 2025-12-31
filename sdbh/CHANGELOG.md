@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.0](https://github.com/mgd43b/shelldbhist/compare/v0.10.0...v0.11.0) (2025-12-31)
+
+
+### Features
+
+* add enhanced preview system with context-aware command analysis ([af7c758](https://github.com/mgd43b/shelldbhist/commit/af7c758367996674a79710ba6ea0a90d8f6e1362))
+* add fzf support to stats commands ([793cfe4](https://github.com/mgd43b/shelldbhist/commit/793cfe46ecac15f73835fb7faf5bff4195e629a5))
+
+
+### Bug Fixes
+
+* prefix unused parameters with underscores to fix clippy warnings ([980c57b](https://github.com/mgd43b/shelldbhist/commit/980c57b02e003bc5df2b8859cb245c207465d293))
+* update tests to match enhanced preview implementation ([0e7513e](https://github.com/mgd43b/shelldbhist/commit/0e7513e5c3b43f6b2ec8e1146ef7a4beea3d09b8))
+
 ## [0.10.0](https://github.com/mgd43b/shelldbhist/compare/v0.9.0...v0.10.0) (2025-12-31)
 
 
