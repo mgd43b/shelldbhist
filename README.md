@@ -1,5 +1,9 @@
 # sdbh
 
+[![CI](https://github.com/mgd43b/shelldbhist/actions/workflows/ci.yml/badge.svg)](https://github.com/mgd43b/shelldbhist/actions/workflows/ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/mgd43b/shelldbhist)](https://github.com/mgd43b/shelldbhist/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/mgd43b/shelldbhist/latest/total)](https://github.com/mgd43b/shelldbhist/releases/latest)
+[![License](https://img.shields.io/github/license/mgd43b/shelldbhist)](https://github.com/mgd43b/shelldbhist/blob/main/LICENSE)
 [![codecov](https://codecov.io/gh/mgd43b/shelldbhist/branch/main/graph/badge.svg)](https://codecov.io/gh/mgd43b/shelldbhist)
 
 Shell DB History (`sdbh`) stores your shell command history in a local SQLite database.
