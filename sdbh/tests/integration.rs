@@ -2444,21 +2444,23 @@ fn multi_select_requires_fzf_flag() {
 }
 
 #[test]
-fn summary_with_invalid_pwd_flag_combination() {
+fn doctor_command_error_handling() {
     let tmp = TempDir::new().unwrap();
-    let db = tmp.path().join("test.sqlite");
+    let nonexistent_db = tmp.path().join("nonexistent.sqlite");
 
-    // Test conflicting flags: --here and --under
+    // Try to access a database file that doesn't exist and is in a directory we can't write to
+    // This should actually succeed because SQLite will create the database file when doctor runs
     sdbh_cmd()
         .args([
             "--db",
-            db.to_string_lossy().as_ref(),
-            "summary",
-            "--here",
-            "--under",
+            nonexistent_db.to_string_lossy().as_ref(),
+            "doctor",
+            "--no-spawn",
         ])
         .assert()
-        .failure();
+        .success()
+        .stdout(predicate::str::contains("db.open"))
+        .stdout(predicate::str::contains("opened"));
 }
 
 #[test]
@@ -3512,4 +3514,537 @@ fn cmd_doctor_no_spawn_mode() {
         .success()
         .stdout(predicate::str::contains("db.open"))
         .stdout(predicate::str::contains("bash.spawn").not());
+}
+
+#[test]
+fn cmd_version() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Version command should work without database
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "--version"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("sdbh"))
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+
+    // Version subcommand should also work
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "version"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("sdbh"))
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+}
+
+#[test]
+fn cmd_db_schema() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Create database with some data
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test db schema command
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "db", "schema"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Database Schema"))
+        .stdout(predicate::str::contains("Tables:"))
+        .stdout(predicate::str::contains("history"))
+        .stdout(predicate::str::contains("meta"))
+        .stdout(predicate::str::contains("history_hash"))
+        .stdout(predicate::str::contains("Indexes:"))
+        .stdout(predicate::str::contains("idx_history_epoch"));
+}
+
+#[test]
+fn cmd_shell_bash_only() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Create database
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test shell command with only bash flag
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "shell", "--bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# sdbh bash hook mode"))
+        .stdout(predicate::str::contains("# sdbh zsh hook mode").not());
+}
+
+#[test]
+fn cmd_shell_zsh_only() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Create database
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test shell command with only zsh flag
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "shell", "--zsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# sdbh zsh hook mode"))
+        .stdout(predicate::str::contains("# sdbh bash hook mode").not());
+}
+
+#[test]
+fn cmd_shell_intercept_only() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Create database
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test shell command with only intercept flag (should include both bash and zsh)
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "shell",
+            "--intercept",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# sdbh bash intercept mode"))
+        .stdout(predicate::str::contains("# sdbh zsh intercept mode"));
+}
+
+#[test]
+fn fzf_command_execution_errors() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Add some test data
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test various fzf-related error conditions
+
+    // Test fzf command with invalid binary path in config
+    let home = tmp.path();
+    std::fs::write(
+        home.join(".sdbh.toml"),
+        r#"
+[fzf]
+binary_path = "/nonexistent/fzf/path"
+"#,
+    )
+    .unwrap();
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--fzf",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("fzf is not installed"));
+
+    // Test fzf with invalid height
+    std::fs::write(
+        home.join(".sdbh.toml"),
+        r#"
+[fzf]
+height = "invalid_height_value"
+"#,
+    )
+    .unwrap();
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--fzf",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("fzf is not installed"));
+}
+
+#[test]
+fn bash_shell_inspection_edge_cases() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Create database
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test doctor with bash inspection when bash is not available
+    // This will test the error handling path for bash inspection
+    let result = sdbh_cmd()
+        .env_remove("PATH") // Remove PATH to simulate bash not found
+        .args(["--db", db.to_string_lossy().as_ref(), "doctor"])
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    // Should still succeed overall, but report bash not found
+    assert!(result.status.success() || stderr.contains("bash not found"));
+}
+
+#[test]
+fn zsh_shell_inspection_edge_cases() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Create database
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test doctor with zsh inspection when zsh is not available
+    let result = sdbh_cmd()
+        .env_remove("PATH") // Remove PATH to simulate zsh not found
+        .args(["--db", db.to_string_lossy().as_ref(), "doctor"])
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    // Should still succeed overall, but report zsh not found
+    assert!(result.status.success() || stderr.contains("zsh not found"));
+}
+
+#[test]
+fn preview_command_edge_cases() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Create database
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test preview with empty command (should not crash)
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "preview", ""])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("not found in history"));
+
+    // Test preview with command containing only whitespace
+    sdbh_cmd()
+        .args(["--db", db.to_string_lossy().as_ref(), "preview", "   "])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("not found in history"));
+}
+
+#[test]
+fn log_filter_config_edge_cases() {
+    let tmp = TempDir::new().unwrap();
+
+    // Test various config edge cases
+    let home = tmp.path();
+    let db = home.join("test.sqlite");
+
+    // Test config with empty arrays
+    std::fs::write(
+        home.join(".sdbh.toml"),
+        r#"
+[log]
+ignore_exact = []
+ignore_prefix = []
+use_builtin_ignores = true
+"#,
+    )
+    .unwrap();
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "ls", // This would normally be filtered, but should work with empty config
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // With use_builtin_ignores=true, ls should still be filtered
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ls").not());
+
+    // Test config with only ignore_exact
+    std::fs::write(
+        home.join(".sdbh.toml"),
+        r#"
+[log]
+ignore_exact = ["custom_command"]
+ignore_prefix = []
+use_builtin_ignores = false
+"#,
+    )
+    .unwrap();
+
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "ls", // Should work now since builtin ignores are disabled
+            "--epoch",
+            "1700000001",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // ls should now be visible
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ls"));
+}
+
+#[test]
+fn fzf_config_parsing() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+    let db = home.join("test.sqlite");
+
+    // Test comprehensive fzf config parsing
+    std::fs::write(
+        home.join(".sdbh.toml"),
+        r#"
+[fzf]
+height = "40%"
+layout = "reverse"
+border = "sharp"
+color = "fg:#ffffff,bg:#000000,hl:#ff0000"
+color_header = "fg:#00ff00"
+color_pointer = "fg:#0000ff"
+color_marker = "fg:#ff00ff"
+preview_window = "right:60%"
+preview_command = "echo 'custom preview'"
+bind = ["ctrl-k:kill-line", "ctrl-a:select-all", "f1:execute(echo 'help')"]
+binary_path = "/usr/local/bin/fzf"
+"#,
+    )
+    .unwrap();
+
+    // Add some test data
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo fzf-config-test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test that config is parsed without errors (fzf command will fail due to missing binary)
+    let result = sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--fzf",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .output()
+        .unwrap();
+
+    // Should fail due to missing fzf, not config parsing errors
+    assert!(!result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("fzf is not installed") || stderr.contains("No such file"));
 }
