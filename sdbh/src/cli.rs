@@ -619,7 +619,11 @@ fn build_fzf_command(base_cmd: &mut std::process::Command, fzf_config: &FzfConfi
     }
 
     // Always enable ANSI colors (can be overridden by config)
-    if !fzf_config.color.as_ref().is_some_and(|c| c.contains("ansi")) {
+    if !fzf_config
+        .color
+        .as_ref()
+        .is_some_and(|c| c.contains("ansi"))
+    {
         base_cmd.arg("--ansi");
     }
 
@@ -2101,8 +2105,6 @@ fn format_timestamp(epoch: i64) -> String {
     format!("{}", epoch)
 }
 
-
-
 fn cmd_shell(args: ShellArgs) -> Result<()> {
     // Default: print both if neither specified
     let want_bash = args.bash || !args.zsh;
@@ -2307,9 +2309,7 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
     build_fzf_command(&mut fzf_cmd, &fzf_config);
 
     // Override defaults with our specific settings
-    fzf_cmd
-        .arg("--preview")
-        .arg("sdbh preview --command {{}}");
+    fzf_cmd.arg("--preview").arg("sdbh preview --command {{}}");
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -2402,9 +2402,7 @@ fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
     build_fzf_command(&mut fzf_cmd, &fzf_config);
 
     // Override defaults with our specific settings
-    fzf_cmd
-        .arg("--preview")
-        .arg("sdbh preview --command {{}}");
+    fzf_cmd.arg("--preview").arg("sdbh preview --command {{}}");
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -2514,9 +2512,7 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
     build_fzf_command(&mut fzf_cmd, &fzf_config);
 
     // Override defaults with our specific settings
-    fzf_cmd
-        .arg("--preview")
-        .arg("sdbh preview --command {{}}");
+    fzf_cmd.arg("--preview").arg("sdbh preview --command {{}}");
 
     // Enable multi-select if requested
     if args.multi_select {
