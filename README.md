@@ -62,7 +62,7 @@ sdbh --db /path/to/file.sqlite list --all
 ## Configuration (optional)
 `sdbh` reads optional settings from `~/.sdbh.toml`.
 
-Example:
+### Logging Configuration
 ```toml
 [log]
 # Add extra ignores (exact command match)
@@ -73,6 +73,53 @@ ignore_prefix = ["cd ", "sdbh "]
 
 # If false, disables built-in ignores (like `ls`, `pwd`, etc.)
 use_builtin_ignores = true
+```
+
+### fzf Configuration
+Customize your fzf experience with the `[fzf]` section:
+
+```toml
+[fzf]
+# Layout and appearance
+height = "60%"                    # Window height ("50%", "20", etc.)
+layout = "reverse"                # Layout style ("default", "reverse")
+border = "rounded"                # Border style ("rounded", "sharp", "bold", "double", "block", "thinblock")
+
+# Color scheme (fzf color string)
+color = "fg:#d0d0d0,bg:#121212,hl:#5f87af"
+color_header = "fg:#87afaf"      # Header text color
+color_pointer = "fg:#ff8700"     # Pointer color
+color_marker = "fg:#87ff00"      # Marker color
+
+# Preview settings
+preview_window = "right:50%"      # Preview window layout ("right:50%", "top:40%", etc.)
+
+# Key bindings (array of fzf bind strings)
+bind = [
+    "ctrl-k:kill-line",           # Custom key bindings
+    "ctrl-j:accept"
+]
+
+# Custom fzf binary path (optional)
+binary_path = "/usr/local/bin/fzf"
+```
+
+**Example full configuration:**
+```toml
+[log]
+ignore_exact = ["echo hello", "make test"]
+use_builtin_ignores = true
+
+[fzf]
+height = "70%"
+layout = "reverse"
+border = "rounded"
+color = "fg:#ebdbb2,bg:#282828,hl:#fabd2f,fg+:#ebdbb2,bg+:#3c3836,hl+:#fabd2f"
+color_header = "fg:#83a598"
+color_pointer = "fg:#fb4934"
+color_marker = "fg:#b8bb26"
+preview_window = "right:60%"
+bind = ["ctrl-k:kill-line", "ctrl-j:accept", "alt-enter:print-query"]
 ```
 
 ## Shell integration modes
