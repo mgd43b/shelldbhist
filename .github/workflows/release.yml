@@ -119,6 +119,16 @@ jobs:
               exit 0
             fi
 
+            # For pull_request events, we never publish but should still allow the workflow to run
+            # for validation purposes (testing the build without publishing)
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              echo "Pull request event; publishing=$publishing. Exiting successfully." >&2
+              echo "tag=" >> "$GITHUB_OUTPUT"
+              echo "tag_flag=" >> "$GITHUB_OUTPUT"
+              echo "publishing=$publishing" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
             echo "No tag could be resolved for event '${{ github.event_name }}'" >&2
             echo "tag=" >> "$GITHUB_OUTPUT"
             echo "tag_flag=" >> "$GITHUB_OUTPUT"
