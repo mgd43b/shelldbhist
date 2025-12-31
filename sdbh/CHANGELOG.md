@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.0](https://github.com/mgd43b/shelldbhist/compare/v0.9.0...v0.10.0) (2025-12-31)
+
+
+### Features
+
+* add fzf preview pane with command details ([91b7821](https://github.com/mgd43b/shelldbhist/commit/91b7821bc8c08ec8568c16b99c4d5f8886fb3f8a))
+* add multi-select support for fzf commands ([0d8f6f9](https://github.com/mgd43b/shelldbhist/commit/0d8f6f9c0f874699715d592367abb348dba18f6b))
+* complete Ctrl+R history integration documentation ([3bb4cb4](https://github.com/mgd43b/shelldbhist/commit/3bb4cb497ef127a43f1a077730a17592a4c82944))
+* comprehensive test coverage expansion and documentation ([3676be2](https://github.com/mgd43b/shelldbhist/commit/3676be2ae4d8e10cd3fee041b447c72bd14e9b90))
+* implement custom fzf configuration system ([4dd7df8](https://github.com/mgd43b/shelldbhist/commit/4dd7df8a0317c09f044f52693ce8fe221fe8c2c3))
+
 ## [0.9.0](https://github.com/mgd43b/shelldbhist/compare/v0.8.0...v0.9.0) (2025-12-31)
 
 
