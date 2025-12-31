@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0](https://github.com/mgd43b/shelldbhist/compare/v0.12.0...v0.13.0) (2025-12-31)
+
+
+### Features
+
+* implement Command Templates System ([3e5f9ea](https://github.com/mgd43b/shelldbhist/commit/3e5f9ea91983463669f3139ed380a5d0976627d0))
+* implement command templates system infrastructure ([892fdcf](https://github.com/mgd43b/shelldbhist/commit/892fdcfb5e39e371d3f1e12d78ee74473dd6a62d))
+
 ## [0.12.0](https://github.com/mgd43b/shelldbhist/compare/v0.11.0...v0.12.0) (2025-12-31)
 
 
