@@ -619,11 +619,7 @@ fn build_fzf_command(base_cmd: &mut std::process::Command, fzf_config: &FzfConfi
     }
 
     // Always enable ANSI colors (can be overridden by config)
-    if !fzf_config
-        .color
-        .as_ref()
-        .map_or(false, |c| c.contains("ansi"))
-    {
+    if !fzf_config.color.as_ref().is_some_and(|c| c.contains("ansi")) {
         base_cmd.arg("--ansi");
     }
 
@@ -2105,24 +2101,7 @@ fn format_timestamp(epoch: i64) -> String {
     format!("{}", epoch)
 }
 
-fn parse_command_from_fzf_line(line: &str) -> Option<String> {
-    // Parse command from fzf line formats:
-    // List/Search: "cmd  (timestamp) [pwd]"
-    // Summary: "cmd [pwd]  (count uses, last: timestamp)"
 
-    // Find the first occurrence of "  (" which separates command from metadata
-    if let Some(cmd_end) = line.find("  (") {
-        let cmd_part = &line[..cmd_end];
-        // Remove pwd part if present: "cmd [pwd]" -> "cmd"
-        if let Some(bracket_start) = cmd_part.find(" [") {
-            Some(cmd_part[..bracket_start].trim().to_string())
-        } else {
-            Some(cmd_part.trim().to_string())
-        }
-    } else {
-        None
-    }
-}
 
 fn cmd_shell(args: ShellArgs) -> Result<()> {
     // Default: print both if neither specified
@@ -2330,7 +2309,7 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
     // Override defaults with our specific settings
     fzf_cmd
         .arg("--preview")
-        .arg(format!("sdbh preview --command {{{{}}}}"));
+        .arg("sdbh preview --command {{}}");
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -2425,7 +2404,7 @@ fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
     // Override defaults with our specific settings
     fzf_cmd
         .arg("--preview")
-        .arg(format!("sdbh preview --command {{{{}}}}"));
+        .arg("sdbh preview --command {{}}");
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -2537,7 +2516,7 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
     // Override defaults with our specific settings
     fzf_cmd
         .arg("--preview")
-        .arg(format!("sdbh preview --command {{{{}}}}"));
+        .arg("sdbh preview --command {{}}");
 
     // Enable multi-select if requested
     if args.multi_select {
