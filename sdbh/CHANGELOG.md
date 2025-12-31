@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/mgd43b/shelldbhist/compare/v0.8.0...v0.9.0) (2025-12-31)
+
+
+### Features
+
+* add fzf integration for interactive command selection ([15f4870](https://github.com/mgd43b/shelldbhist/commit/15f48709aa321b0093a472ac1051eda11ac4eec3))
+
 ## [0.8.0](https://github.com/mgd43b/shelldbhist/compare/v0.7.0...v0.8.0) (2025-12-24)
 
 
