@@ -113,12 +113,16 @@ pub struct SummaryArgs {
     #[arg(long, conflicts_with = "here")]
     pub under: bool,
 
-    #[arg(long)]
-    pub verbose: bool,
-
     /// Use fzf for interactive selection (outputs selected command to stdout)
     #[arg(long)]
     pub fzf: bool,
+
+    /// Allow selecting multiple commands with fzf (implies --fzf)
+    #[arg(long)]
+    pub multi_select: bool,
+
+    #[arg(long)]
+    pub verbose: bool,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -171,6 +175,10 @@ pub struct ListArgs {
     /// Use fzf for interactive selection (outputs selected command to stdout)
     #[arg(long)]
     pub fzf: bool,
+
+    /// Allow selecting multiple commands with fzf (implies --fzf)
+    #[arg(long)]
+    pub multi_select: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -213,6 +221,10 @@ pub struct SearchArgs {
     /// Use fzf for interactive selection (outputs selected command to stdout)
     #[arg(long)]
     pub fzf: bool,
+
+    /// Allow selecting multiple commands with fzf (implies --fzf)
+    #[arg(long)]
+    pub multi_select: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -2084,41 +2096,57 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
     }
 
     // Run fzf
-    let mut fzf_cmd = std::process::Command::new("fzf")
+    let mut fzf_cmd = std::process::Command::new("fzf");
+    fzf_cmd
         .arg("--ansi") // Enable ANSI color codes
-        .arg("--no-multi") // Single selection only
         .arg("--height=50%") // Use half screen height
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null()) // Suppress stderr
-        .spawn()?;
+        .stderr(std::process::Stdio::null()); // Suppress stderr
+
+    // Enable multi-select if requested
+    if args.multi_select {
+        fzf_cmd.arg("--multi");
+    } else {
+        fzf_cmd.arg("--no-multi");
+    }
+
+    let mut fzf_process = fzf_cmd.spawn()?;
 
     // Write input to fzf's stdin
-    if let Some(mut stdin) = fzf_cmd.stdin.take() {
+    if let Some(mut stdin) = fzf_process.stdin.take() {
         std::io::Write::write_all(&mut stdin, fzf_input.as_bytes())?;
         drop(stdin); // Close stdin to signal EOF
     }
 
     // Wait for fzf to complete and get output
-    let output = fzf_cmd.wait_with_output()?;
+    let output = fzf_process.wait_with_output()?;
 
     if !output.status.success() {
         // User cancelled selection (Ctrl+C) or fzf failed
         return Ok(());
     }
 
-    // Extract the selected command (everything before the first "  (")
+    // Extract the selected command(s)
     let selected = String::from_utf8_lossy(&output.stdout);
-    let selected = selected.trim();
+    let selected_lines: Vec<&str> = selected.lines().collect();
 
-    if selected.is_empty() {
+    if selected_lines.is_empty() {
         return Ok(());
     }
 
-    // Extract command from the fzf format: "cmd  (timestamp) [pwd]"
-    if let Some(cmd_end) = selected.find("  (") {
-        let cmd = &selected[..cmd_end];
-        println!("{}", cmd);
+    // Process each selected line
+    for line in selected_lines {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Extract command from the fzf format: "cmd  (timestamp) [pwd]"
+        if let Some(cmd_end) = line.find("  (") {
+            let cmd = &line[..cmd_end];
+            println!("{}", cmd);
+        }
     }
 
     Ok(())
@@ -2155,47 +2183,67 @@ fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
     }
 
     // Run fzf
-    let mut fzf_cmd = std::process::Command::new("fzf")
+    let mut fzf_cmd = std::process::Command::new("fzf");
+    fzf_cmd
         .arg("--ansi") // Enable ANSI color codes
-        .arg("--no-multi") // Single selection only
         .arg("--height=50%") // Use half screen height
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null()) // Suppress stderr
-        .spawn()?;
+        .stderr(std::process::Stdio::null()); // Suppress stderr
+
+    // Enable multi-select if requested
+    if args.multi_select {
+        fzf_cmd.arg("--multi");
+    } else {
+        fzf_cmd.arg("--no-multi");
+    }
+
+    let mut fzf_process = fzf_cmd.spawn()?;
 
     // Write input to fzf's stdin
-    if let Some(mut stdin) = fzf_cmd.stdin.take() {
+    if let Some(mut stdin) = fzf_process.stdin.take() {
         std::io::Write::write_all(&mut stdin, fzf_input.as_bytes())?;
         drop(stdin); // Close stdin to signal EOF
     }
 
     // Wait for fzf to complete and get output
-    let output = fzf_cmd.wait_with_output()?;
+    let output = fzf_process.wait_with_output()?;
 
     if !output.status.success() {
         // User cancelled selection (Ctrl+C) or fzf failed
         return Ok(());
     }
 
-    // Extract the selected command (everything before the first "  (")
+    // Extract the selected command(s)
     let selected = String::from_utf8_lossy(&output.stdout);
-    let selected = selected.trim();
+    let selected_lines: Vec<&str> = selected.lines().collect();
 
-    if selected.is_empty() {
+    if selected_lines.is_empty() {
         return Ok(());
     }
 
-    // Extract command from the fzf format: "cmd  (timestamp) [pwd]"
-    if let Some(cmd_end) = selected.find("  (") {
-        let cmd = &selected[..cmd_end];
-        println!("{}", cmd);
+    // Process each selected line
+    for line in selected_lines {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Extract command from the fzf format: "cmd  (timestamp) [pwd]"
+        if let Some(cmd_end) = line.find("  (") {
+            let cmd = &line[..cmd_end];
+            println!("{}", cmd);
+        }
     }
 
     Ok(())
 }
 
 fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
+    // Check if multi_select was requested but not fzf
+    if args.multi_select && !args.fzf {
+        anyhow::bail!("--multi-select requires --fzf flag");
+    }
     // Check if fzf is available
     if which("fzf").is_none() {
         anyhow::bail!(
@@ -2238,47 +2286,63 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
     }
 
     // Run fzf
-    let mut fzf_cmd = std::process::Command::new("fzf")
+    let mut fzf_cmd = std::process::Command::new("fzf");
+    fzf_cmd
         .arg("--ansi") // Enable ANSI color codes
-        .arg("--no-multi") // Single selection only
         .arg("--height=50%") // Use half screen height
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null()) // Suppress stderr
-        .spawn()?;
+        .stderr(std::process::Stdio::null()); // Suppress stderr
+
+    // Enable multi-select if requested
+    if args.multi_select {
+        fzf_cmd.arg("--multi");
+    } else {
+        fzf_cmd.arg("--no-multi");
+    }
+
+    let mut fzf_process = fzf_cmd.spawn()?;
 
     // Write input to fzf's stdin
-    if let Some(mut stdin) = fzf_cmd.stdin.take() {
+    if let Some(mut stdin) = fzf_process.stdin.take() {
         std::io::Write::write_all(&mut stdin, fzf_input.as_bytes())?;
         drop(stdin); // Close stdin to signal EOF
     }
 
     // Wait for fzf to complete and get output
-    let output = fzf_cmd.wait_with_output()?;
+    let output = fzf_process.wait_with_output()?;
 
     if !output.status.success() {
         // User cancelled selection (Ctrl+C) or fzf failed
         return Ok(());
     }
 
-    // Extract the selected command (everything before the first "  (")
+    // Extract the selected command(s)
     let selected = String::from_utf8_lossy(&output.stdout);
-    let selected = selected.trim();
+    let selected_lines: Vec<&str> = selected.lines().collect();
 
-    if selected.is_empty() {
+    if selected_lines.is_empty() {
         return Ok(());
     }
 
-    // Extract command from the fzf format: "cmd [pwd]  (count uses, last: timestamp)"
-    if let Some(cmd_end) = selected.find("  (") {
-        let cmd_part = &selected[..cmd_end];
-        // Remove pwd part if present: "cmd [pwd]" -> "cmd"
-        let cmd = if let Some(bracket_start) = cmd_part.find(" [") {
-            cmd_part[..bracket_start].trim()
-        } else {
-            cmd_part.trim()
-        };
-        println!("{}", cmd);
+    // Process each selected line
+    for line in selected_lines {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Extract command from the fzf format: "cmd [pwd]  (count uses, last: timestamp)"
+        if let Some(cmd_end) = line.find("  (") {
+            let cmd_part = &line[..cmd_end];
+            // Remove pwd part if present: "cmd [pwd]" -> "cmd"
+            let cmd = if let Some(bracket_start) = cmd_part.find(" [") {
+                cmd_part[..bracket_start].trim()
+            } else {
+                cmd_part.trim()
+            };
+            println!("{}", cmd);
+        }
     }
 
     Ok(())
@@ -2307,6 +2371,7 @@ mod tests {
             under: false,
             verbose: false,
             fzf: false,
+            multi_select: false,
         };
         let (_sql, bind) = build_summary_sql(&args).unwrap();
         // --all means unlimited, so limit should be u32::MAX
@@ -2327,6 +2392,7 @@ mod tests {
             under: false,
             verbose: false,
             fzf: false,
+            multi_select: false,
         };
         let (_sql, bind) = build_summary_sql(&args).unwrap();
         assert_eq!(bind.last().unwrap(), "5");

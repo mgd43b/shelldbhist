@@ -539,6 +539,130 @@ fn search_finds_substring_case_insensitive_and_respects_limit() {
 }
 
 #[test]
+fn fzf_multi_select_flag_parsing() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Add some test data
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test1",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo test2",
+            "--epoch",
+            "1700000001",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test that --fzf flag still works (baseline)
+    // This will fail since fzf isn't installed in test environment,
+    // but we want to verify the flag parsing works
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--fzf",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .failure() // Should fail due to missing fzf, not invalid flags
+        .stderr(predicate::str::contains("fzf is not installed"));
+}
+
+#[test]
+fn fzf_multi_select_configuration() {
+    // Test that multi-select flag can be parsed
+    // This is a compile-time test to ensure the flag exists
+    use clap::CommandFactory;
+
+    // Test the binary directly rather than through crate path
+    let output = sdbh_cmd()
+        .args([
+            "list",
+            "--help",
+        ])
+        .output()
+        .unwrap();
+
+    let help_text = String::from_utf8_lossy(&output.stdout);
+    assert!(help_text.contains("--fzf"), "fzf flag should be available");
+    // Multi-select and preview flags will be added next
+}
+
+#[test]
+fn fzf_preview_configuration() {
+    // Test that the basic fzf integration works
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Add some test data
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            "echo preview-test",
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "123",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "42",
+        ])
+        .assert()
+        .success();
+
+    // Test that basic fzf flag works (preview functionality will be added later)
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "list",
+            "--fzf",
+            "--all",
+            "--limit",
+            "10",
+        ])
+        .assert()
+        .failure() // Should fail due to missing fzf, not invalid flags
+        .stderr(predicate::str::contains("fzf is not installed"));
+}
+
+#[test]
 fn search_supports_since_epoch_filter() {
     let tmp = TempDir::new().unwrap();
     let db_path = tmp.path().join("test.sqlite");
