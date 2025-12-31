@@ -51,6 +51,9 @@ pub enum Commands {
     /// Print shell integration snippets
     Shell(ShellArgs),
 
+    /// Show detailed preview information for a command (used by fzf preview)
+    Preview(PreviewArgs),
+
     /// Show version information
     Version,
 }
@@ -385,6 +388,12 @@ pub struct ShellArgs {
     pub intercept: bool,
 }
 
+#[derive(Parser, Debug)]
+pub struct PreviewArgs {
+    /// Command to preview
+    pub command: String,
+}
+
 pub fn run(cli: Cli) -> Result<()> {
     let db_path = cli.db.unwrap_or_else(DbConfig::default_path);
     let cfg = DbConfig { path: db_path };
@@ -401,6 +410,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Doctor(args) => cmd_doctor(cfg, args),
         Commands::Db(args) => cmd_db(cfg, args),
         Commands::Shell(args) => cmd_shell(args),
+        Commands::Preview(args) => cmd_preview(cfg, args),
         Commands::Version => {
             println!("sdbh {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -1900,6 +1910,98 @@ fn read_zsh_history(path: &std::path::Path) -> Result<Vec<HistoryEntry>> {
     Ok(out)
 }
 
+fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
+    let conn = open_db(&cfg)?;
+
+    // Get command statistics
+    let mut stmt = conn.prepare(
+        "SELECT
+            COUNT(*) as total_uses,
+            MAX(epoch) as last_used_epoch,
+            MIN(epoch) as first_used_epoch,
+            COUNT(DISTINCT pwd) as unique_dirs,
+            GROUP_CONCAT(DISTINCT pwd) as dirs
+         FROM history
+         WHERE cmd = ?1"
+    )?;
+
+    let mut rows = stmt.query([args.command.as_str()])?;
+    if let Some(row) = rows.next()? {
+        let total_uses: i64 = row.get(0)?;
+        let last_used_epoch: i64 = row.get(1)?;
+        let first_used_epoch: i64 = row.get(2)?;
+        let unique_dirs: i64 = row.get(3)?;
+        let dirs: Option<String> = row.get(4)?;
+
+        // Format timestamps
+        let last_used = format_timestamp(last_used_epoch);
+        let first_used = format_timestamp(first_used_epoch);
+
+        println!("Command: {}", args.command);
+        println!("Total uses: {}", total_uses);
+        println!("First used: {}", first_used);
+        println!("Last used: {}", last_used);
+        println!("Unique directories: {}", unique_dirs);
+
+        if let Some(dirs) = dirs {
+            println!("Recent directories:");
+            // Show up to 3 most recent directories
+            let dir_list: Vec<&str> = dirs.split(',').take(3).collect();
+            for dir in dir_list {
+                println!("  {}", dir);
+            }
+            if dirs.split(',').count() > 3 {
+                println!("  ... and {} more", dirs.split(',').count() - 3);
+            }
+        }
+
+        // Show recent executions (last 3)
+        println!("\nRecent executions:");
+        let mut recent_stmt = conn.prepare(
+            "SELECT id, datetime(epoch, 'unixepoch', 'localtime'), pwd
+             FROM history
+             WHERE cmd = ?1
+             ORDER BY epoch DESC
+             LIMIT 3"
+        )?;
+        let mut recent_rows = recent_stmt.query([args.command.as_str()])?;
+        while let Some(recent_row) = recent_rows.next()? {
+            let id: i64 = recent_row.get(0)?;
+            let timestamp: String = recent_row.get(1)?;
+            let pwd: String = recent_row.get(2)?;
+            println!("  {} | {} | {}", id, timestamp, pwd);
+        }
+    } else {
+        println!("Command '{}' not found in history", args.command);
+    }
+
+    Ok(())
+}
+
+fn format_timestamp(epoch: i64) -> String {
+    // Simple timestamp formatting - could be enhanced
+    format!("{}", epoch)
+}
+
+fn parse_command_from_fzf_line(line: &str) -> Option<String> {
+    // Parse command from fzf line formats:
+    // List/Search: "cmd  (timestamp) [pwd]"
+    // Summary: "cmd [pwd]  (count uses, last: timestamp)"
+
+    // Find the first occurrence of "  (" which separates command from metadata
+    if let Some(cmd_end) = line.find("  (") {
+        let cmd_part = &line[..cmd_end];
+        // Remove pwd part if present: "cmd [pwd]" -> "cmd"
+        if let Some(bracket_start) = cmd_part.find(" [") {
+            Some(cmd_part[..bracket_start].trim().to_string())
+        } else {
+            Some(cmd_part.trim().to_string())
+        }
+    } else {
+        None
+    }
+}
+
 fn cmd_shell(args: ShellArgs) -> Result<()> {
     // Default: print both if neither specified
     let want_bash = args.bash || !args.zsh;
@@ -2100,6 +2202,9 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
     fzf_cmd
         .arg("--ansi") // Enable ANSI color codes
         .arg("--height=50%") // Use half screen height
+        .arg("--preview")
+        .arg(format!("sdbh preview --command {{{{}}}}"))
+        .arg("--preview-window=right:50%")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null()); // Suppress stderr
@@ -2187,6 +2292,9 @@ fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
     fzf_cmd
         .arg("--ansi") // Enable ANSI color codes
         .arg("--height=50%") // Use half screen height
+        .arg("--preview")
+        .arg(format!("sdbh preview --command {{{{}}}}"))
+        .arg("--preview-window=right:50%")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null()); // Suppress stderr
@@ -2290,6 +2398,9 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
     fzf_cmd
         .arg("--ansi") // Enable ANSI color codes
         .arg("--height=50%") // Use half screen height
+        .arg("--preview")
+        .arg(format!("sdbh preview --command {{{{}}}}"))
+        .arg("--preview-window=right:50%")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null()); // Suppress stderr

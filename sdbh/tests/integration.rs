@@ -1618,3 +1618,47 @@ fn search_respects_session_filter() {
         .stdout(predicate::str::contains("session1"))
         .stdout(predicate::str::contains("session2").not());
 }
+
+#[test]
+fn preview_shows_command_statistics() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Add multiple executions of the same command
+    for i in 0..3 {
+        sdbh_cmd()
+            .args([
+                "--db",
+                db.to_string_lossy().as_ref(),
+                "log",
+                "--cmd",
+                "git status",
+                "--epoch",
+                &format!("17000000{}", i),
+                "--ppid",
+                "123",
+                "--pwd",
+                &format!("/tmp/dir{}", i),
+                "--salt",
+                "42",
+            ])
+            .assert()
+            .success();
+    }
+
+    // Test preview command shows statistics
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "preview",
+            "git status",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Command: git status"))
+        .stdout(predicate::str::contains("Total uses: 3"))
+        .stdout(predicate::str::contains("Unique directories: 3"))
+        .stdout(predicate::str::contains("Recent directories:"))
+        .stdout(predicate::str::contains("Recent executions:"));
+}
