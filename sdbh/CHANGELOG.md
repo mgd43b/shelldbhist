@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.0](https://github.com/mgd43b/shelldbhist/compare/v0.11.0...v0.12.0) (2025-12-31)
+
+
+### Features
+
+* complete Phase 3 UI/UX polish and performance optimizations ([5f0e45f](https://github.com/mgd43b/shelldbhist/commit/5f0e45f81732e4718e07d2ace54801148a8780ad))
+* implement enhanced preview features for fzf integration ([d886aca](https://github.com/mgd43b/shelldbhist/commit/d886aca2b8eceee7d42cfbb4d557b4b7afe13771))
+* Major test coverage expansion - 54.60% → 65.39% (+10.79%) ([f409864](https://github.com/mgd43b/shelldbhist/commit/f4098644f7f8f8604ba1cad5dd2853eee103704f))
+
 ## [0.11.0](https://github.com/mgd43b/shelldbhist/compare/v0.10.0...v0.11.0) (2025-12-31)
 
 
