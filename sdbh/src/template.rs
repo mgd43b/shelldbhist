@@ -229,10 +229,10 @@ impl TemplateEngine {
 
         // Apply defaults for variables that don't have values yet
         for var in &template.variables {
-            if !resolved_vars.contains_key(&var.name) {
-                if let Some(default) = &var.default {
-                    resolved_vars.insert(var.name.clone(), default.clone());
-                }
+            if !resolved_vars.contains_key(&var.name)
+                && let Some(default) = &var.default
+            {
+                resolved_vars.insert(var.name.clone(), default.clone());
             }
         }
 

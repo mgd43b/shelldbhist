@@ -4241,7 +4241,9 @@ default = "1"
 
     // Should succeed and output the resolved command
     assert!(result.status.success());
-    assert!(stdout.contains("ssh testuser@example.com -p 2222 'cd /home/testuser && ls -la --flag=false --count=5'"));
+    assert!(stdout.contains(
+        "ssh testuser@example.com -p 2222 'cd /home/testuser && ls -la --flag=false --count=5'"
+    ));
 }
 
 #[test]
@@ -4797,5 +4799,5 @@ required = true
         let result = sdbh_cmd().env("HOME", home).args(&args).output().unwrap();
 
         assert!(result.status.success());
-}
+    }
 }
