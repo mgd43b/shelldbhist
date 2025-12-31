@@ -568,9 +568,7 @@ fn load_config_file() -> Option<ConfigFile> {
 }
 
 fn load_fzf_config() -> FzfConfig {
-    load_config_file()
-        .map(|cfg| cfg.fzf)
-        .unwrap_or_default()
+    load_config_file().map(|cfg| cfg.fzf).unwrap_or_default()
 }
 
 fn build_fzf_command(base_cmd: &mut std::process::Command, fzf_config: &FzfConfig) {
@@ -592,13 +590,19 @@ fn build_fzf_command(base_cmd: &mut std::process::Command, fzf_config: &FzfConfi
         base_cmd.arg("--color").arg(color);
     }
     if let Some(color_header) = &fzf_config.color_header {
-        base_cmd.arg("--color").arg(format!("header:{}", color_header));
+        base_cmd
+            .arg("--color")
+            .arg(format!("header:{}", color_header));
     }
     if let Some(color_pointer) = &fzf_config.color_pointer {
-        base_cmd.arg("--color").arg(format!("pointer:{}", color_pointer));
+        base_cmd
+            .arg("--color")
+            .arg(format!("pointer:{}", color_pointer));
     }
     if let Some(color_marker) = &fzf_config.color_marker {
-        base_cmd.arg("--color").arg(format!("marker:{}", color_marker));
+        base_cmd
+            .arg("--color")
+            .arg(format!("marker:{}", color_marker));
     }
 
     // Preview settings
@@ -615,7 +619,11 @@ fn build_fzf_command(base_cmd: &mut std::process::Command, fzf_config: &FzfConfi
     }
 
     // Always enable ANSI colors (can be overridden by config)
-    if !fzf_config.color.as_ref().map_or(false, |c| c.contains("ansi")) {
+    if !fzf_config
+        .color
+        .as_ref()
+        .map_or(false, |c| c.contains("ansi"))
+    {
         base_cmd.arg("--ansi");
     }
 
@@ -2025,7 +2033,7 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
             COUNT(DISTINCT pwd) as unique_dirs,
             GROUP_CONCAT(DISTINCT pwd) as dirs
          FROM history
-         WHERE cmd = ?1"
+         WHERE cmd = ?1",
     )?;
 
     let mut rows = stmt.query([args.command.as_str()])?;
@@ -2044,8 +2052,12 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
         }
 
         // Format timestamps
-        let last_used = last_used_epoch.map(format_timestamp).unwrap_or_else(|| "Never".to_string());
-        let first_used = first_used_epoch.map(format_timestamp).unwrap_or_else(|| "Never".to_string());
+        let last_used = last_used_epoch
+            .map(format_timestamp)
+            .unwrap_or_else(|| "Never".to_string());
+        let first_used = first_used_epoch
+            .map(format_timestamp)
+            .unwrap_or_else(|| "Never".to_string());
 
         println!("Command: {}", args.command);
         println!("Total uses: {}", total_uses);
@@ -2072,7 +2084,7 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
              FROM history
              WHERE cmd = ?1
              ORDER BY epoch DESC
-             LIMIT 3"
+             LIMIT 3",
         )?;
         let mut recent_rows = recent_stmt.query([args.command.as_str()])?;
         while let Some(recent_row) = recent_rows.next()? {
@@ -2282,8 +2294,7 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
     let fzf_config = load_fzf_config();
 
     // Check if fzf is available
-    let fzf_binary = fzf_config.binary_path.as_deref()
-        .unwrap_or("fzf");
+    let fzf_binary = fzf_config.binary_path.as_deref().unwrap_or("fzf");
     if which(fzf_binary).is_none() {
         anyhow::bail!(
             "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
@@ -2378,8 +2389,7 @@ fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
     let fzf_config = load_fzf_config();
 
     // Check if fzf is available
-    let fzf_binary = fzf_config.binary_path.as_deref()
-        .unwrap_or("fzf");
+    let fzf_binary = fzf_config.binary_path.as_deref().unwrap_or("fzf");
     if which(fzf_binary).is_none() {
         anyhow::bail!(
             "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."
@@ -2479,8 +2489,7 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
     let fzf_config = load_fzf_config();
 
     // Check if fzf is available
-    let fzf_binary = fzf_config.binary_path.as_deref()
-        .unwrap_or("fzf");
+    let fzf_binary = fzf_config.binary_path.as_deref().unwrap_or("fzf");
     if which(fzf_binary).is_none() {
         anyhow::bail!(
             "fzf is not installed or not found in PATH. Please install fzf to use --fzf flag."

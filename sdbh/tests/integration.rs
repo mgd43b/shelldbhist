@@ -476,7 +476,9 @@ binary_path = "/usr/bin/fzf"
     // Should fail due to missing fzf, not config parsing
     assert!(!result.status.success());
     let stderr = String::from_utf8_lossy(&result.stderr);
-    assert!(stderr.contains("fzf is not installed") || stderr.contains("No such file or directory"));
+    assert!(
+        stderr.contains("fzf is not installed") || stderr.contains("No such file or directory")
+    );
 }
 
 #[test]
@@ -636,8 +638,6 @@ fn shell_integration_functions_documented() {
     // This validates that the shell integration functions documented in README
     // have the necessary underlying functionality working
 }
-
-
 
 #[test]
 fn final_memory_bank_update() {
@@ -826,13 +826,7 @@ fn fzf_multi_select_configuration() {
     use clap::CommandFactory;
 
     // Test the binary directly rather than through crate path
-    let output = sdbh_cmd()
-        .args([
-            "list",
-            "--help",
-        ])
-        .output()
-        .unwrap();
+    let output = sdbh_cmd().args(["list", "--help"]).output().unwrap();
 
     let help_text = String::from_utf8_lossy(&output.stdout);
     assert!(help_text.contains("--fzf"), "fzf flag should be available");
@@ -1917,7 +1911,9 @@ fn preview_command_not_found() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Command 'nonexistent_command' not found in history"));
+        .stdout(predicate::str::contains(
+            "Command 'nonexistent_command' not found in history",
+        ));
 }
 
 #[test]
@@ -1927,11 +1923,7 @@ fn invalid_arguments_cause_graceful_failures() {
 
     // Test invalid subcommand
     sdbh_cmd()
-        .args([
-            "--db",
-            db.to_string_lossy().as_ref(),
-            "invalid_command",
-        ])
+        .args(["--db", db.to_string_lossy().as_ref(), "invalid_command"])
         .assert()
         .failure();
 
@@ -1949,11 +1941,7 @@ fn invalid_arguments_cause_graceful_failures() {
 
     // Test search without query argument
     sdbh_cmd()
-        .args([
-            "--db",
-            db.to_string_lossy().as_ref(),
-            "search",
-        ])
+        .args(["--db", db.to_string_lossy().as_ref(), "search"])
         .assert()
         .failure();
 }
@@ -2065,12 +2053,7 @@ fn export_with_session_filter() {
 
     // Export should work regardless of session filter
     sdbh_cmd()
-        .args([
-            "--db",
-            db.to_string_lossy().as_ref(),
-            "export",
-            "--session",
-        ])
+        .args(["--db", db.to_string_lossy().as_ref(), "export", "--session"])
         .env("SDBH_SALT", "1")
         .env("SDBH_PPID", "100")
         .assert()
@@ -2127,11 +2110,7 @@ fn config_file_parsing_errors() {
 
     // Test with invalid TOML config
     let home = tmp.path();
-    std::fs::write(
-        home.join(".sdbh.toml"),
-        r#"invalid toml content ["#,
-    )
-    .unwrap();
+    std::fs::write(home.join(".sdbh.toml"), r#"invalid toml content ["#).unwrap();
 
     // Commands should still work despite config parsing errors
     sdbh_cmd()
@@ -2184,7 +2163,9 @@ fn multi_select_requires_fzf_flag() {
         ])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("--multi-select requires --fzf flag"));
+        .stderr(predicate::str::contains(
+            "--multi-select requires --fzf flag",
+        ));
 }
 
 #[test]
@@ -2373,12 +2354,7 @@ fn preview_with_very_long_command() {
 
     // Preview should work with long commands
     sdbh_cmd()
-        .args([
-            "--db",
-            db.to_string_lossy().as_ref(),
-            "preview",
-            &long_cmd,
-        ])
+        .args(["--db", db.to_string_lossy().as_ref(), "preview", &long_cmd])
         .assert()
         .success()
         .stdout(predicate::str::contains("Command: very_long_command_name"));
@@ -2559,11 +2535,11 @@ fn extreme_timestamp_values() {
 
     // Test with various timestamp edge cases
     let timestamps = vec![
-        "0",      // Unix epoch start
-        "1",      // Just after epoch
+        "0",          // Unix epoch start
+        "1",          // Just after epoch
         "2147483647", // Max 32-bit signed int
         "4000000000", // Way in the future
-        "-1",     // Before epoch (might be rejected by SQLite)
+        "-1",         // Before epoch (might be rejected by SQLite)
     ];
 
     for (i, ts) in timestamps.iter().enumerate() {
