@@ -162,6 +162,9 @@ coverage*.json
 coverage*.xml
 coverage*.info
 
+# Tarpaulin (cargo-tarpaulin) coverage reports
+lcov.info
+
 # Visual Studio code coverage results
 *.coverage
 *.coveragexml
