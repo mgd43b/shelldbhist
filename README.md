@@ -15,11 +15,14 @@ It’s inspired by `dbhist.sh`, but implemented as a portable Rust CLI backed by
 - 🎯 **Multi-select support** with `--multi-select` flag for batch operations
 - ⚙️ **Full configuration system** via `~/.sdbh.toml` for colors, layout, and key bindings
 - 🎨 **Ctrl+R replacement** for shell history search (transformative UX improvement)
+- 📱 **Responsive terminal design** adapting to different terminal widths (80-200+ chars)
+- 🔧 **Command Templates System** for reusable command patterns with variable substitution
+- 💻 **Professional UI/UX** with organized information hierarchy and smart truncation
 - Local SQLite history database (`~/.sdbh.sqlite` by default)
 - Fast search (substring), raw history listing, grouped summaries
 - Stats (top commands, by-directory, daily buckets)
 - Database health monitoring and performance optimization
-- Comprehensive test coverage (60.6% CLI coverage, 57 integration tests)
+- Comprehensive test coverage (67.2% CLI coverage, 87 integration tests)
 - Import/merge from existing `dbhist.sh` SQLite databases
 - Import from shell history files (`.bash_history`, `.zsh_history`)
 
@@ -282,6 +285,44 @@ sdbh doctor --no-spawn
 sdbh doctor --format json
 ```
 
+### Command Templates System
+`sdbh` includes a powerful Command Templates System for defining reusable command patterns with variable substitution. This feature is currently in infrastructure setup phase for v0.12.0.
+
+#### Template Definition (Coming in v0.12.0)
+Define reusable command patterns in `~/.sdbh.toml`:
+
+```toml
+[templates.git-commit]
+description = "Git commit with conventional format"
+command = "git add . && git commit -m '{type}: {message}'"
+variables = ["type", "message"]
+default_values = { type = "feat" }
+
+[templates.docker-deploy]
+description = "Deploy to Docker environment"
+command = "docker build -t {image}:{tag} . && docker push {image}:{tag} && kubectl set image deployment/{deployment} app={image}:{tag}"
+variables = ["image", "tag", "deployment"]
+default_values = { tag = "latest" }
+```
+
+#### Usage (CLI structure ready for v0.12.0)
+```bash
+# List all available templates
+sdbh template --list
+
+# Execute a template with variable substitution
+sdbh template git-commit --var type=feat --var message="add new feature"
+
+# Interactive template selection with fzf
+sdbh template --fzf
+
+# Create or edit templates interactively
+sdbh template --create git-workflow
+
+# Delete a template
+sdbh template --delete old-template
+```
+
 ## Interactive Fuzzy Selection
 
 `sdbh` integrates with [fzf](https://github.com/junegun/fzf) for interactive command selection. The killer feature is **replacing your shell's Ctrl+R history search** with sdbh's intelligent fuzzy search across your entire command history.
@@ -291,29 +332,29 @@ sdbh doctor --format json
 `sdbh` provides a rich, context-aware preview system that transforms command selection from basic text matching into intelligent analysis:
 
 #### Command Analysis Preview
-When browsing commands with `--fzf`, the right-side preview pane shows detailed command intelligence:
+When browsing commands with `--fzf`, the right-side preview pane shows detailed command intelligence with responsive design that adapts to terminal width:
 
 ```bash
 # Example preview for "git status"
-🔍 Command Analysis
-Command: git status
-Type: 🔧 Git
-Total uses: 45
-First used: 2024-01-01 10:30:22
-Last used: 2024-12-01 14:30:22
-Unique directories: 3
+🔍 Command Analysis: git status
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Usage Statistics
+  Total uses: 45
+  First used: 3 weeks ago
+  Last used: 2h ago
+  Directories: 3
 
-ℹ️ Shows working directory status and changes
+ℹ️  Context: Shows working directory status and changes
 
 📁 Directory Usage:
-  /home/user/project
-  /tmp/build
-  /var/www
+  • /home/user/project
+  • /tmp/build
+  • /var/www
 
-🕒 Recent Executions:
-  1. 45 | 2024-12-01 14:30:22 | /home/user/project
-  2. 44 | 2024-11-30 09:15:11 | /tmp/build
-  3. 43 | 2024-11-29 16:45:33 | /var/www
+🕒 Recent Activity (Last 5 executions):
+  1. 2h ago   | git status          | /home/user/project
+  2. 1d ago   | git status --porcelain | /home/user/project
+  3. 3d ago   | git status          | /tmp/build
 ```
 
 #### Context-Aware Intelligence

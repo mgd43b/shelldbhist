@@ -54,6 +54,9 @@ pub enum Commands {
     /// Show detailed preview information for a command (used by fzf preview)
     Preview(PreviewArgs),
 
+    /// Command template system for reusable command patterns
+    Template(TemplateArgs),
+
     /// Show version information
     Version,
 }
@@ -418,6 +421,36 @@ pub struct PreviewArgs {
     pub command: String,
 }
 
+#[derive(Parser, Debug)]
+pub struct TemplateArgs {
+    /// Template name to execute (if not provided, lists all templates)
+    pub name: Option<String>,
+
+    /// Variable assignments in the format key=value
+    #[arg(short, long)]
+    pub var: Vec<String>,
+
+    /// List all available templates
+    #[arg(long)]
+    pub list: bool,
+
+    /// Create or update a template (interactive mode)
+    #[arg(long)]
+    pub create: bool,
+
+    /// Delete a template
+    #[arg(long)]
+    pub delete: bool,
+
+    /// Use fzf for interactive template selection
+    #[arg(long)]
+    pub fzf: bool,
+
+    /// Allow selecting multiple templates with fzf (implies --fzf)
+    #[arg(long)]
+    pub multi_select: bool,
+}
+
 pub fn run(cli: Cli) -> Result<()> {
     let db_path = cli.db.unwrap_or_else(DbConfig::default_path);
     let cfg = DbConfig { path: db_path };
@@ -435,6 +468,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Db(args) => cmd_db(cfg, args),
         Commands::Shell(args) => cmd_shell(args),
         Commands::Preview(args) => cmd_preview(cfg, args),
+        Commands::Template(args) => cmd_template(cfg, args),
         Commands::Version => {
             println!("sdbh {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -3528,6 +3562,16 @@ fn cmd_stats_daily_fzf(cfg: DbConfig, args: StatsDailyArgs) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn cmd_template(_cfg: DbConfig, _args: TemplateArgs) -> Result<()> {
+    // Placeholder implementation for Command Templates System
+    // TODO: Implement full template system with TOML configuration, variable substitution, and fzf integration
+    println!("Command Templates System - Coming Soon!");
+    println!(
+        "This feature will allow you to define reusable command patterns with variable substitution."
+    );
     Ok(())
 }
 
