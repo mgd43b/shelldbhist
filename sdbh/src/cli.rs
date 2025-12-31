@@ -2176,10 +2176,10 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
             }
         }
 
-        // Show recent executions with full context (last 5)
+        // Show recent executions with enhanced context (last 5)
         println!("\n🕒 Recent Executions:");
         let mut recent_stmt = conn.prepare(
-            "SELECT id, datetime(epoch, 'unixepoch', 'localtime'), pwd
+            "SELECT id, epoch, pwd, cmd
              FROM history
              WHERE cmd = ?1
              ORDER BY epoch DESC
@@ -2190,9 +2190,38 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
         while let Some(recent_row) = recent_rows.next()? {
             count += 1;
             let id: i64 = recent_row.get(0)?;
-            let timestamp: String = recent_row.get(1)?;
+            let epoch: i64 = recent_row.get(1)?;
             let pwd: String = recent_row.get(2)?;
-            println!("  {}. {} | {} | {}", count, id, timestamp, pwd);
+            let full_cmd: String = recent_row.get(3)?;
+
+            // Use relative time for better readability
+            let relative_time = format_relative_time(epoch);
+
+            // Highlight command variations (show differences from base command)
+            let base_cmd = args.command.as_str();
+            let cmd_display = if full_cmd == base_cmd {
+                full_cmd.clone()
+            } else if full_cmd.starts_with(&(base_cmd.to_string() + " ")) {
+                // Show the arguments that differ
+                let args_part = &full_cmd[base_cmd.len()..];
+                format!("{}{}", base_cmd, args_part)
+            } else {
+                full_cmd.clone()
+            };
+
+            // Truncate long commands and directories for fzf readability
+            let short_cmd = if cmd_display.len() > 50 {
+                format!("{}...", &cmd_display[..47])
+            } else {
+                cmd_display
+            };
+            let short_pwd = if pwd.len() > 30 {
+                format!("{}...", &pwd[pwd.len().saturating_sub(27)..])
+            } else {
+                pwd
+            };
+
+            println!("  {}. {} | {} | {}", count, relative_time, short_cmd, short_pwd);
         }
 
         // Show related commands
@@ -2207,6 +2236,38 @@ fn cmd_preview(cfg: DbConfig, args: PreviewArgs) -> Result<()> {
 fn format_timestamp(epoch: i64) -> String {
     // Simple timestamp formatting - could be enhanced
     format!("{}", epoch)
+}
+
+fn format_relative_time(epoch: i64) -> String {
+    use time::OffsetDateTime;
+
+    let now = OffsetDateTime::now_utc();
+    let now_epoch = now.unix_timestamp();
+
+    let diff_secs = now_epoch - epoch;
+
+    if diff_secs < 0 {
+        return "in the future".to_string();
+    }
+
+    let diff_mins = diff_secs / 60;
+    let diff_hours = diff_mins / 60;
+    let diff_days = diff_hours / 24;
+
+    match diff_secs {
+        0..=59 => format!("{}s ago", diff_secs),
+        60..=3599 => format!("{}m ago", diff_mins),
+        3600..=86399 => format!("{}h ago", diff_hours),
+        86400..=604799 => format!("{}d ago", diff_days),
+        _ => {
+            // For older timestamps, show the actual date
+            if let Ok(dt) = OffsetDateTime::from_unix_timestamp(epoch) {
+                dt.format(time::macros::format_description!("[year]-[month]-[day]")).unwrap_or_else(|_| format_timestamp(epoch))
+            } else {
+                format_timestamp(epoch)
+            }
+        }
+    }
 }
 
 fn format_command_type(cmd_type: CommandType) -> &'static str {
@@ -2385,9 +2446,157 @@ fn show_make_info(_conn: &rusqlite::Connection, cmd: &str) -> Result<()> {
 fn show_related_commands(
     conn: &rusqlite::Connection,
     base_cmd: &str,
-    _cmd_type: CommandType,
+    cmd_type: CommandType,
 ) -> Result<()> {
-    // Find commands that share the same base command or are commonly used together
+    let mut suggestions = Vec::new();
+
+    // 1. Semantic similarity: Find commands with related purposes
+    let semantic_suggestions = find_semantic_related_commands(base_cmd, cmd_type);
+    suggestions.extend(semantic_suggestions);
+
+    // 2. Same tool variations: Commands starting with same tool (current behavior)
+    let tool_suggestions = find_tool_related_commands(conn, base_cmd)?;
+    suggestions.extend(tool_suggestions);
+
+    // 3. Workflow patterns: Commands commonly used in same sessions
+    let workflow_suggestions = find_workflow_related_commands(conn, base_cmd)?;
+    suggestions.extend(workflow_suggestions);
+
+    // 4. Directory-based: Commands used in same directories
+    let directory_suggestions = find_directory_related_commands(conn, base_cmd)?;
+    suggestions.extend(directory_suggestions);
+
+    // Remove duplicates and the base command itself
+    let mut unique_suggestions: Vec<String> = suggestions
+        .into_iter()
+        .filter(|cmd| cmd != base_cmd)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    // Sort by relevance (semantic first, then tool, workflow, directory)
+    // For now, just limit to 5 most relevant
+    unique_suggestions.truncate(5);
+
+    if !unique_suggestions.is_empty() {
+        println!("\n🔗 Related Commands");
+        for cmd in unique_suggestions.iter() {
+            // Truncate long commands for display
+            let display_cmd = if cmd.len() > 60 {
+                format!("{}...", &cmd[..57])
+            } else {
+                cmd.clone()
+            };
+            println!("  {}", display_cmd);
+        }
+    }
+
+    Ok(())
+}
+
+fn find_semantic_related_commands(base_cmd: &str, cmd_type: CommandType) -> Vec<String> {
+    let mut suggestions = Vec::new();
+
+    match cmd_type {
+        CommandType::Git => {
+            // Git workflow patterns
+            if base_cmd.contains("commit") {
+                suggestions.extend(vec![
+                    "git status".to_string(),
+                    "git log --oneline".to_string(),
+                    "git push".to_string(),
+                ]);
+            } else if base_cmd.contains("push") {
+                suggestions.extend(vec![
+                    "git status".to_string(),
+                    "git log --oneline -5".to_string(),
+                    "git pull".to_string(),
+                ]);
+            } else if base_cmd.contains("pull") || base_cmd.contains("fetch") {
+                suggestions.extend(vec![
+                    "git status".to_string(),
+                    "git log --oneline -5".to_string(),
+                    "git merge".to_string(),
+                ]);
+            } else if base_cmd.contains("branch") {
+                suggestions.extend(vec![
+                    "git checkout".to_string(),
+                    "git branch -a".to_string(),
+                ]);
+            } else if base_cmd.contains("checkout") || base_cmd.contains("switch") {
+                suggestions.extend(vec![
+                    "git status".to_string(),
+                    "git branch".to_string(),
+                ]);
+            }
+        }
+        CommandType::Docker => {
+            if base_cmd.contains("build") {
+                suggestions.extend(vec![
+                    "docker images".to_string(),
+                    "docker run".to_string(),
+                    "docker ps -a".to_string(),
+                ]);
+            } else if base_cmd.contains("run") {
+                suggestions.extend(vec![
+                    "docker ps".to_string(),
+                    "docker logs".to_string(),
+                    "docker stop".to_string(),
+                ]);
+            } else if base_cmd.contains("ps") {
+                suggestions.extend(vec![
+                    "docker logs".to_string(),
+                    "docker exec".to_string(),
+                ]);
+            }
+        }
+        CommandType::Cargo => {
+            if base_cmd.contains("build") {
+                suggestions.extend(vec![
+                    "cargo run".to_string(),
+                    "cargo test".to_string(),
+                    "cargo check".to_string(),
+                ]);
+            } else if base_cmd.contains("test") {
+                suggestions.extend(vec![
+                    "cargo build".to_string(),
+                    "cargo run".to_string(),
+                ]);
+            } else if base_cmd.contains("run") {
+                suggestions.extend(vec![
+                    "cargo build".to_string(),
+                    "cargo test".to_string(),
+                ]);
+            }
+        }
+        CommandType::Npm => {
+            if base_cmd.contains("install") {
+                suggestions.extend(vec![
+                    "npm start".to_string(),
+                    "npm run build".to_string(),
+                    "npm test".to_string(),
+                ]);
+            } else if base_cmd.contains("start") {
+                suggestions.extend(vec![
+                    "npm run build".to_string(),
+                    "npm test".to_string(),
+                ]);
+            }
+        }
+        CommandType::Make => {
+            suggestions.extend(vec![
+                "make clean".to_string(),
+                "make install".to_string(),
+                "make test".to_string(),
+            ]);
+        }
+        _ => {}
+    }
+
+    suggestions
+}
+
+fn find_tool_related_commands(conn: &rusqlite::Connection, base_cmd: &str) -> Result<Vec<String>> {
     let first_word = base_cmd.split_whitespace().next().unwrap_or("");
 
     // Query for other commands that start with the same tool, ordered by most recent usage
@@ -2405,26 +2614,64 @@ fn show_related_commands(
     let like_pattern = format!("{} %", escape_like(first_word));
     let mut rows = stmt.query([&like_pattern, base_cmd])?;
 
-    let mut related = Vec::new();
+    let mut suggestions = Vec::new();
     while let Some(row) = rows.next()? {
         let cmd: String = row.get(0)?;
-        related.push(cmd);
+        suggestions.push(cmd);
     }
 
-    if !related.is_empty() {
-        println!("\n🔗 Related Commands");
-        for cmd in related.iter().take(3) {
-            // Truncate long commands for display
-            let display_cmd = if cmd.len() > 60 {
-                format!("{}...", &cmd[..57])
-            } else {
-                cmd.clone()
-            };
-            println!("  {}", display_cmd);
-        }
+    Ok(suggestions)
+}
+
+fn find_workflow_related_commands(conn: &rusqlite::Connection, base_cmd: &str) -> Result<Vec<String>> {
+    // Find commands that are commonly used in the same sessions as the base command
+    let sql = r#"
+        SELECT h2.cmd, COUNT(*) as co_occurrences, MAX(h2.epoch) as latest_epoch
+        FROM history h1
+        JOIN history h2 ON h1.salt = h2.salt AND h1.ppid = h2.ppid
+        WHERE h1.cmd = ?1
+          AND h2.cmd != ?1
+          AND ABS(h1.epoch - h2.epoch) < 3600  -- Within 1 hour
+        GROUP BY h2.cmd
+        ORDER BY co_occurrences DESC, latest_epoch DESC
+        LIMIT 2
+    "#;
+
+    let mut stmt = conn.prepare(sql)?;
+    let mut rows = stmt.query([base_cmd])?;
+
+    let mut suggestions = Vec::new();
+    while let Some(row) = rows.next()? {
+        let cmd: String = row.get(0)?;
+        suggestions.push(cmd);
     }
 
-    Ok(())
+    Ok(suggestions)
+}
+
+fn find_directory_related_commands(conn: &rusqlite::Connection, base_cmd: &str) -> Result<Vec<String>> {
+    // Find commands used in the same directories as the base command
+    let sql = r#"
+        SELECT h2.cmd, COUNT(*) as shared_dirs, MAX(h2.epoch) as latest_epoch
+        FROM history h1
+        JOIN history h2 ON h1.pwd = h2.pwd
+        WHERE h1.cmd = ?1
+          AND h2.cmd != ?1
+        GROUP BY h2.cmd
+        ORDER BY shared_dirs DESC, latest_epoch DESC
+        LIMIT 2
+    "#;
+
+    let mut stmt = conn.prepare(sql)?;
+    let mut rows = stmt.query([base_cmd])?;
+
+    let mut suggestions = Vec::new();
+    while let Some(row) = rows.next()? {
+        let cmd: String = row.get(0)?;
+        suggestions.push(cmd);
+    }
+
+    Ok(suggestions)
 }
 
 fn cmd_shell(args: ShellArgs) -> Result<()> {

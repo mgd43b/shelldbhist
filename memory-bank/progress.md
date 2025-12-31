@@ -10,8 +10,8 @@
   - `sdbh db optimize` - creates missing indexes and runs optimization
   - `sdbh db stats` - detailed database statistics and fragmentation analysis
 - **Automatic performance optimization**: Enabled for all users by default on database open
-- **Integration test coverage**: **76/76 tests passing** covering all functionality including 17 new comprehensive error handling tests + 5 new stats fzf tests + 6 new enhanced preview tests + 6 new coverage expansion tests
-- **Major test coverage improvement**: CLI module from 53% to 63.3% coverage (+10.3% absolute improvement), overall coverage 54.60% → 65.39% (+10.79%), integration tests from 57 to 76 (+33.3% increase)
+- **Integration test coverage**: **87/87 tests passing** covering all functionality including 17 new comprehensive error handling tests + 5 new stats fzf tests + 6 new enhanced preview tests + 6 new coverage expansion tests
+- **Major test coverage improvement**: CLI module at 67.2% coverage (1105/1641 lines), overall coverage 68.92% (1222/1773 lines covered)
 - **Systematic error handling coverage**: Added comprehensive tests for shell integration, JSON output, configuration systems, and database operations
 - **fzf integration**: Interactive fuzzy selection with `--fzf` flag for `list`, `search`, `summary`, and `stats` commands
 - **fzf preview pane**: Right-side preview showing command statistics when hovering in fzf
@@ -23,8 +23,10 @@
 - **GitHub releases**: Automated artifact publishing working reliably
 - **CI/CD pipeline**: **Production-ready** with PR validation, quality enforcement, and automated testing
 - **Pre-commit quality checks**: Automatic `cargo fmt` and `cargo clippy` enforcement preventing quality drift
-- **Enhanced preview system**: Context-aware command analysis with related commands suggestions for 11+ command types
+- **Enhanced preview system**: Context-aware command analysis with intelligent related commands suggestions for 11+ command types
 - **Dependabot compatibility**: PR events handled gracefully without breaking CI validation
+- **Enhanced recent executions**: Relative timestamps ("2h ago"), command variation highlighting, and full directory context
+- **Smart related commands**: Four algorithms (semantic, tool variations, workflow patterns, directory-based) with deduplication
 
 ## CI / Releases
 - **CI workflow**: `.github/workflows/ci.yml` runs fmt/clippy/test with comprehensive quality checks

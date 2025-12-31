@@ -84,8 +84,8 @@
 
 ## Interactive Fuzzy Selection (fzf integration)
 - **fzf detection and execution**: Commands check for fzf availability and fail gracefully if not installed
-- **Three command integration points**: `list --fzf`, `search --fzf`, `summary --fzf` all support interactive selection
-- **Preview pane**: Right-side preview showing command statistics when hovering in fzf
+- **Four command integration points**: `list --fzf`, `search --fzf`, `summary --fzf`, `stats --fzf` all support interactive selection
+- **Enhanced preview pane**: Right-side preview with comprehensive command analysis
 - **Multi-select support**: `--multi-select` flag enables Tab-based multi-selection in fzf
 - **Custom fzf configuration**: Comprehensive `~/.sdbh.toml` support for all fzf options
 - **Configuration options**: Height, layout, borders, colors, key bindings, preview settings, binary path
@@ -96,6 +96,19 @@
   - Summary: `"command [directory]  (count uses, last: timestamp)"`
 - **Command parsing**: Robust parsing of fzf line formats to extract command names for preview
 - **Output handling**: Single commands or multi-line output for multiple selections
+
+### Enhanced Preview System
+- **Context-aware command analysis**: `CommandType::detect()` categorizes commands into 11+ types (Git, Docker, Kubernetes, Cargo, NPM, Make, etc.)
+- **Intelligent command explanations**: `show_command_type_info()` displays type-specific information for each command category
+- **Enhanced recent executions**: `format_relative_time()` converts timestamps to human-readable format ("2h ago", "1d ago")
+- **Smart related commands**: Four algorithms for intelligent command suggestions:
+  - **Semantic similarity**: Workflow patterns based on command type (e.g., `git commit` → `git status`, `git push`)
+  - **Tool variations**: Commands starting with same tool (`find_tool_related_commands`)
+  - **Workflow patterns**: Commands used together in same sessions within 1-hour windows (`find_workflow_related_commands`)
+  - **Directory-based**: Commands used in same directories (`find_directory_related_commands`)
+- **Command highlighting**: Shows argument variations from base commands
+- **Directory usage tracking**: Displays all directories where commands were executed
+- **Smart deduplication**: Removes duplicate suggestions and limits to 5 most relevant
 
 ## Preview subcommand
 - **Statistics display**: Shows total uses, first/last execution times, unique directories

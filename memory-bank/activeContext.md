@@ -204,8 +204,47 @@
 - Version sync guards preventing drift
 - CI/CD workflow stable across releases
 
+## Enhanced Preview Features: Completed ✅
+
+Successfully implemented comprehensive enhancements to the fzf preview system for `sdbh`, delivering a significantly improved user experience when browsing command history.
+
+### Phase 1: Enhanced Recent Execution History ✅
+- **Relative timestamps**: Commands now display "2h ago", "1d ago", etc. instead of raw epoch timestamps
+- **Command variation highlighting**: Shows differences from base commands when arguments vary
+- **Better formatting**: Truncated long commands and directories for fzf readability
+- **Improved context**: Full directory context and chronological ordering
+
+### Phase 2: Smart Related Commands Suggestions ✅
+- **Semantic similarity**: Intelligent suggestions based on command type and workflow patterns
+  - Git: `git commit` → suggests `git status`, `git log`, `git push`
+  - Docker: `docker build` → suggests `docker images`, `docker run`, `docker ps`
+  - Cargo: `cargo build` → suggests `cargo run`, `cargo test`, `cargo check`
+  - NPM: `npm install` → suggests `npm start`, `npm run build`, `npm test`
+  - Make: Suggests common targets like `clean`, `install`, `test`
+- **Tool variations**: Commands starting with the same tool (preserved existing functionality)
+- **Workflow patterns**: Commands commonly used together in the same sessions within 1-hour windows
+- **Directory-based**: Commands used in the same directories
+- **Smart deduplication**: Removes duplicates and limits to 5 most relevant suggestions
+
+### Technical Implementation Details
+- Added `format_relative_time()` function using `time` crate for human-readable timestamps
+- Implemented four types of related command detection algorithms
+- Enhanced SQL queries for richer execution context and relationship analysis
+- Comprehensive test coverage with 6 new integration tests
+- All tests passing (87/87) with improved user experience validation
+
+### Phase 3: UI/UX Polish and Performance (Pending)
+- Further layout improvements for information hierarchy
+- Performance optimizations for large command histories
+- Enhanced visual formatting and collapsible sections
+
+## Test Coverage Status
+- **Current coverage**: 68.92% (1222/1773 lines covered)
+- **CLI module**: 67.2% coverage (1105/1641 lines)
+- **All enhanced preview tests passing**: 6 comprehensive integration tests added
+
 ## Next Development Phase: Enhancement & Analytics
-Now that the major fzf integration is complete, focus shifts to advanced features and user experience improvements.
+Focus shifts to advanced features and user experience improvements.
 
 ### Potential Future Features
 1. **Command Templates System** - Predefined command patterns for common workflows
@@ -217,13 +256,12 @@ Now that the major fzf integration is complete, focus shifts to advanced feature
 
 #### fzf Integration Enhancements
 1. **Stats Commands fzf Support** - Add `--fzf` to `stats top`, `stats by-pwd`, and `stats daily` for interactive selection from statistical results
-2. **Enhanced Preview Features** - Context-aware previews showing different information based on command type, recent execution history with full context, and suggestions for related commands
-3. **fzf Key Bindings & Actions** - Custom key bindings for direct command execution (Ctrl+Enter), clipboard copying, and editing commands before execution
-4. **Advanced fzf Integration** - History-based scoring to prioritize recently/frequently used commands, command template integration, and better directory-aware filtering with --here/--under flags
+2. **fzf Key Bindings & Actions** - Custom key bindings for direct command execution (Ctrl+Enter), clipboard copying, and editing commands before execution
+3. **Advanced fzf Integration** - History-based scoring to prioritize recently/frequently used commands, command template integration, and better directory-aware filtering with --here/--under flags
 
 ### Development Priorities
-- **User Feedback Integration** - Monitor adoption of fzf features and gather feedback
-- **Test Coverage Expansion** - Continue improving coverage beyond 60.6%
+- **User Feedback Integration** - Monitor adoption of enhanced preview features and gather feedback
+- **Test Coverage Expansion** - Continue improving coverage beyond current 68.92%
 - **Performance Monitoring** - Track query performance as database sizes grow
 - **Documentation Maintenance** - Keep shell integration examples current
 - **Cross-platform Polish** - Ensure robust support across all target platforms
@@ -232,3 +270,4 @@ Now that the major fzf integration is complete, focus shifts to advanced feature
 - Maintain reliable release automation
 - Monitor for any v0.10.0 issues or feedback
 - Keep release guidance current in `docs/releasing.md`
+- Prepare for v0.11.0 release with enhanced preview features
