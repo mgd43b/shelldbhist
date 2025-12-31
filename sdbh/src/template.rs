@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Template parsing and management engine
+#[derive(Debug)]
 pub struct TemplateEngine {
     templates_dir: PathBuf,
 }
@@ -331,6 +332,48 @@ fn is_valid_variable_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
+    use tempfile::TempDir;
+
+    // Helper function to create a temporary template engine for testing
+    fn create_test_engine() -> (TemplateEngine, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let templates_dir = temp_dir.path().join("templates");
+        std::fs::create_dir_all(&templates_dir).unwrap();
+
+        // Create a mock TemplateEngine with the temp directory
+        let engine = TemplateEngine {
+            templates_dir: templates_dir.clone(),
+        };
+
+        (engine, temp_dir)
+    }
+
+    // Helper function to create a sample template
+    fn create_sample_template() -> Template {
+        Template {
+            id: "test-template".to_string(),
+            name: "Test Template".to_string(),
+            description: Some("A test template".to_string()),
+            command: "echo {message} from {user}".to_string(),
+            category: Some("test".to_string()),
+            variables: vec![
+                crate::domain::Variable {
+                    name: "message".to_string(),
+                    description: Some("The message to echo".to_string()),
+                    required: true,
+                    default: Some("hello".to_string()),
+                },
+                crate::domain::Variable {
+                    name: "user".to_string(),
+                    description: Some("The user name".to_string()),
+                    required: true,
+                    default: None,
+                },
+            ],
+            defaults: HashMap::new(),
+        }
+    }
 
     #[test]
     fn test_extract_variables() {
@@ -383,5 +426,285 @@ mod tests {
         assert!(!is_valid_variable_name("123invalid"));
         assert!(!is_valid_variable_name("invalid-name"));
         assert!(!is_valid_variable_name("invalid name"));
+    }
+
+    #[test]
+    fn test_template_engine_new() {
+        // Test with HOME set
+        unsafe { env::set_var("HOME", "/tmp") };
+        let result = TemplateEngine::new();
+        assert!(result.is_ok());
+
+        let engine = result.unwrap();
+        assert!(engine.templates_dir().ends_with(".sdbh/templates"));
+    }
+
+    #[test]
+    fn test_template_engine_new_no_home() {
+        // Test without HOME or USERPROFILE
+        unsafe {
+            env::remove_var("HOME");
+            env::remove_var("USERPROFILE");
+        }
+
+        let result = TemplateEngine::new();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Could not determine home directory")
+        );
+    }
+
+    #[test]
+    fn test_validate_template_valid() {
+        let (engine, _temp) = create_test_engine();
+        let template = create_sample_template();
+
+        let result = engine.validate_template(&template);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_template_empty_id() {
+        let (engine, _temp) = create_test_engine();
+        let mut template = create_sample_template();
+        template.id = "".to_string();
+
+        let result = engine.validate_template(&template);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Template ID cannot be empty")
+        );
+    }
+
+    #[test]
+    fn test_validate_template_empty_name() {
+        let (engine, _temp) = create_test_engine();
+        let mut template = create_sample_template();
+        template.name = "".to_string();
+
+        let result = engine.validate_template(&template);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Template name cannot be empty")
+        );
+    }
+
+    #[test]
+    fn test_validate_template_empty_command() {
+        let (engine, _temp) = create_test_engine();
+        let mut template = create_sample_template();
+        template.command = "".to_string();
+
+        let result = engine.validate_template(&template);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Template command cannot be empty")
+        );
+    }
+
+    #[test]
+    fn test_validate_template_invalid_variable_name() {
+        let (engine, _temp) = create_test_engine();
+        let mut template = create_sample_template();
+        template.variables[0].name = "invalid-name".to_string();
+
+        let result = engine.validate_template(&template);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid variable name")
+        );
+    }
+
+    #[test]
+    fn test_validate_template_undefined_variable() {
+        let (engine, _temp) = create_test_engine();
+        let mut template = create_sample_template();
+        template.command = "echo {undefined_var}".to_string();
+
+        let result = engine.validate_template(&template);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("used in command but not defined")
+        );
+    }
+
+    #[test]
+    fn test_save_and_load_template() {
+        let (engine, _temp) = create_test_engine();
+        let template = create_sample_template();
+
+        // Save template
+        let save_result = engine.save_template(&template);
+        assert!(save_result.is_ok());
+
+        // Load template
+        let load_result = engine.load_template("test-template");
+        assert!(load_result.is_ok());
+
+        let loaded = load_result.unwrap();
+        assert_eq!(loaded.id, template.id);
+        assert_eq!(loaded.name, template.name);
+        assert_eq!(loaded.command, template.command);
+        assert_eq!(loaded.variables.len(), template.variables.len());
+    }
+
+    #[test]
+    fn test_load_template_not_found() {
+        let (engine, _temp) = create_test_engine();
+
+        let result = engine.load_template("nonexistent");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_list_templates() {
+        let (engine, _temp) = create_test_engine();
+        let template1 = create_sample_template();
+
+        let mut template2 = create_sample_template();
+        template2.id = "template2".to_string();
+        template2.name = "Template 2".to_string();
+
+        // Save templates
+        engine.save_template(&template1).unwrap();
+        engine.save_template(&template2).unwrap();
+
+        // List templates
+        let result = engine.list_templates();
+        assert!(result.is_ok());
+
+        let templates = result.unwrap();
+        assert_eq!(templates.len(), 2);
+
+        // Check that both templates are present
+        let ids: Vec<String> = templates.iter().map(|t| t.id.clone()).collect();
+        assert!(ids.contains(&"test-template".to_string()));
+        assert!(ids.contains(&"template2".to_string()));
+    }
+
+    #[test]
+    fn test_delete_template() {
+        let (engine, _temp) = create_test_engine();
+        let template = create_sample_template();
+
+        // Save template
+        engine.save_template(&template).unwrap();
+
+        // Verify it exists
+        assert!(engine.load_template("test-template").is_ok());
+
+        // Delete template
+        let delete_result = engine.delete_template("test-template");
+        assert!(delete_result.is_ok());
+
+        // Verify it's gone
+        assert!(engine.load_template("test-template").is_err());
+    }
+
+    #[test]
+    fn test_delete_template_not_found() {
+        let (engine, _temp) = create_test_engine();
+
+        let result = engine.delete_template("nonexistent");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_resolve_template_with_defaults() {
+        let (engine, _temp) = create_test_engine();
+        let template = create_sample_template();
+
+        let mut provided_vars = HashMap::new();
+        provided_vars.insert("user".to_string(), "alice".to_string());
+        // message should use default "hello"
+
+        let result = engine.resolve_template(&template, &provided_vars);
+        assert!(result.is_ok());
+
+        let resolved = result.unwrap();
+        assert_eq!(resolved.resolved_command, "echo hello from alice");
+        assert_eq!(resolved.variables_used.get("message").unwrap(), "hello");
+        assert_eq!(resolved.variables_used.get("user").unwrap(), "alice");
+    }
+
+    #[test]
+    fn test_resolve_template_missing_required() {
+        let (engine, _temp) = create_test_engine();
+        let template = create_sample_template();
+
+        let provided_vars = HashMap::new(); // Missing required "user"
+
+        let result = engine.resolve_template(&template, &provided_vars);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Required variable 'user' not provided")
+        );
+    }
+
+    #[test]
+    fn test_extract_variables_complex() {
+        // Test various edge cases
+        assert_eq!(
+            extract_variables("{var} {var} {other}").unwrap(),
+            vec!["var", "other"]
+        );
+
+        assert_eq!(
+            extract_variables("cmd {var1} --flag={var2}").unwrap(),
+            vec!["var1", "var2"]
+        );
+
+        assert_eq!(
+            extract_variables("no braces here").unwrap(),
+            Vec::<String>::new()
+        );
+
+        assert_eq!(extract_variables("{single}").unwrap(), vec!["single"]);
+    }
+
+    #[test]
+    fn test_substitute_variables_edge_cases() {
+        let mut vars = HashMap::new();
+        vars.insert("empty".to_string(), "".to_string());
+        vars.insert("spaces".to_string(), "hello world".to_string());
+        vars.insert("special".to_string(), "chars/with-dashes".to_string());
+
+        assert_eq!(
+            substitute_variables("{empty} test", &vars).unwrap(),
+            " test"
+        );
+
+        assert_eq!(
+            substitute_variables("'{spaces}'", &vars).unwrap(),
+            "'hello world'"
+        );
+
+        assert_eq!(
+            substitute_variables("cmd {special}", &vars).unwrap(),
+            "cmd chars/with-dashes"
+        );
     }
 }
