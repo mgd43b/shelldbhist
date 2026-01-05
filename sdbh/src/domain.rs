@@ -34,12 +34,15 @@ pub struct Template {
     /// Human-readable name
     pub name: String,
     /// Description of what this template does
+    #[serde(default)]
     pub description: Option<String>,
     /// The command template with {variable} placeholders
     pub command: String,
     /// Category for organization (git, docker, kubernetes, etc.)
+    #[serde(default)]
     pub category: Option<String>,
     /// List of variables that can be used in the command
+    #[serde(default)]
     pub variables: Vec<Variable>,
     /// Default values for variables
     #[serde(default)]

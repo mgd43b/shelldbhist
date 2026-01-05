@@ -244,8 +244,23 @@ impl TemplateEngine {
             }
         }
 
-        // Prompt for missing variables interactively
+        // Check if we're in an interactive environment
+        let is_interactive = atty::is(atty::Stream::Stdin);
+
+        // Prompt for missing variables interactively (only if interactive)
         if !missing_vars.is_empty() {
+            if !is_interactive {
+                // In non-interactive environments (like tests), fail with a clear error
+                let missing_names: Vec<String> =
+                    missing_vars.iter().map(|v| v.name.clone()).collect();
+                anyhow::bail!(
+                    "Template '{}' requires variables that were not provided: {}. \
+                     Provide them using --var key=value flags.",
+                    template.name,
+                    missing_names.join(", ")
+                );
+            }
+
             println!(
                 "Template '{}' requires the following variables:",
                 template.name
