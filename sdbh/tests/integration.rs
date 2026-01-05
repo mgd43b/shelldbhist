@@ -4629,11 +4629,19 @@ fn template_file_operations_error_handling() {
     for (cmd, args) in nonexistent_tests.iter() {
         let mut full_args = vec![*cmd];
         full_args.extend_from_slice(args);
-        let result = sdbh_cmd().env("HOME", home).args(&full_args).output().unwrap();
+        let result = sdbh_cmd()
+            .env("HOME", home)
+            .args(&full_args)
+            .output()
+            .unwrap();
 
         assert!(!result.status.success());
         let stderr = String::from_utf8_lossy(&result.stderr);
-        assert!(stderr.contains("not found") || stderr.contains("No such file") || stderr.contains("unrecognized subcommand"));
+        assert!(
+            stderr.contains("not found")
+                || stderr.contains("No such file")
+                || stderr.contains("unrecognized subcommand")
+        );
     }
 }
 
