@@ -1,18 +1,11 @@
 {
-  "release-type": "rust",
+  "release-type": "simple",
   "include-v-in-tag": true,
   "include-component-in-tag": false,
   "packages": {
     "sdbh": {
       "path": "sdbh",
-      "release-type": "rust",
-      "extra-files": [
-        {
-          "type": "toml",
-          "path": "sdbh/Cargo.toml",
-          "jsonpath": "$.package.version"
-        }
-      ]
+      "release-type": "simple"
     }
   }
 }

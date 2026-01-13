@@ -15,8 +15,8 @@ In GitHub:
 
 ## Day-to-day release flow
 1) Merge feature/fix PRs into `main` using **Conventional Commit** titles:
-   - `feat: ...` (minor bump)
-   - `fix: ...` (patch bump)
+   - `feat: ...` (minor bump: 0.12.0 → 0.13.0)
+   - `fix: ...` (patch bump: 0.12.0 → 0.12.1)
    - `chore: ...` (usually no release)
 
 2) release-please will open/update a Release PR.
