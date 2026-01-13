@@ -7,6 +7,7 @@ pub fn open_db(cfg: &DbConfig) -> Result<Connection> {
     let conn = Connection::open(&cfg.path)
         .with_context(|| format!("opening sqlite db at {}", cfg.path.display()))?;
     init_schema(&conn)?;
+    ensure_indexes(&conn)?;
     Ok(conn)
 }
 

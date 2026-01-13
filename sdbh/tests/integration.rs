@@ -1913,53 +1913,6 @@ fn db_health_checks_database_integrity_and_indexes() {
 }
 
 #[test]
-fn doctor_warns_about_missing_indexes() {
-    let tmp = TempDir::new().unwrap();
-    let db = tmp.path().join("test.sqlite");
-
-    // Create database without indexes by directly manipulating SQLite
-    {
-        let conn = conn(&db);
-        conn.execute_batch(
-            r#"
-            CREATE TABLE history (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              hist_id INTEGER,
-              cmd TEXT,
-              epoch INTEGER,
-              ppid INTEGER,
-              pwd TEXT,
-              salt INTEGER
-            );
-            CREATE TABLE meta (
-              key TEXT PRIMARY KEY,
-              value TEXT NOT NULL
-            );
-            CREATE TABLE history_hash (
-              hash TEXT PRIMARY KEY,
-              history_id INTEGER
-            );
-            INSERT INTO meta(key,value) VALUES('schema_version','1');
-            "#,
-        )
-        .unwrap();
-    }
-
-    sdbh_cmd()
-        .args([
-            "--db",
-            db.to_string_lossy().as_ref(),
-            "doctor",
-            "--no-spawn",
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("db.indexes"))
-        .stdout(predicate::str::contains("Missing performance indexes"))
-        .stdout(predicate::str::contains("run 'sdbh db optimize'"));
-}
-
-#[test]
 fn db_optimize_creates_missing_indexes() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("test.sqlite");
