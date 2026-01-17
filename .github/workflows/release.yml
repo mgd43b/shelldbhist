@@ -39,19 +39,16 @@ permissions:
 # If there's a prerelease-style suffix to the version, then the release(s)
 # will be marked as a prerelease.
 on:
-  workflow_run:
-    workflows: ["Release Please"]
-    types: [completed]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release (e.g. v0.5.0)'
-        required: true
-        type: string
-  pull_request:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.13.0)'
+        required: true
+        type: string
+  pull_request:
 
 jobs:
   # Run 'dist plan' (or host) to determine what tasks we need to do
@@ -76,7 +73,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Default: don't publish on pull_request runs
+          # Default: publish on tag push, don't publish on pull_request runs
           publishing=true
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             publishing=false
@@ -87,38 +84,9 @@ jobs:
             tag="${{ github.event.inputs.tag }}"
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             tag="${{ github.ref_name }}"
-          elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            # If Release Please triggered us, only publish when this workflow_run corresponds
-            # to an actual release PR merge.
-            #
-            # We define that as: the triggering commit SHA has a SemVer-ish tag (vX.Y.Z*)
-            # pointing at it.
-            sha="${{ github.event.workflow_run.head_sha }}"
-            echo "workflow_run head_sha=$sha"
-
-            # Find a tag that points at this SHA.
-            # Use the API so we don't need the tag in our local clone.
-            tag=$(gh api "repos/${{ github.repository }}/git/matching-refs/tags/v" --paginate \
-              | jq -r --arg sha "$sha" '.[] | select(.object.sha==$sha) | .ref | sub("refs/tags/"; "")' \
-              | head -n 1)
-
-            if [[ -z "$tag" ]]; then
-              echo "No v* tag found pointing at $sha; this was not a release PR merge. Skipping publish." >&2
-              publishing=false
-            fi
           fi
 
           if [[ -z "$tag" ]]; then
-            # For workflow_run we may intentionally skip publishing when this wasn't
-            # a release PR merge.
-            if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-              echo "No tag resolved; publishing=$publishing. Exiting successfully." >&2
-              echo "tag=" >> "$GITHUB_OUTPUT"
-              echo "tag_flag=" >> "$GITHUB_OUTPUT"
-              echo "publishing=$publishing" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
             # For pull_request events, we never publish but should still allow the workflow to run
             # for validation purposes (testing the build without publishing)
             if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -129,14 +97,12 @@ jobs:
               exit 0
             fi
 
-            echo "No tag could be resolved for event '${{ github.event_name }}'" >&2
-            echo "tag=" >> "$GITHUB_OUTPUT"
-            echo "tag_flag=" >> "$GITHUB_OUTPUT"
-            echo "publishing=$publishing" >> "$GITHUB_OUTPUT"
+            echo "ERROR: No tag could be resolved for event '${{ github.event_name }}'" >&2
             exit 1
           fi
 
           echo "Resolved tag: $tag"
+          echo "Publishing: $publishing"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "tag_flag=--tag=$tag" >> "$GITHUB_OUTPUT"
           echo "publishing=$publishing" >> "$GITHUB_OUTPUT"
