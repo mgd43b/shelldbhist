@@ -28,20 +28,30 @@ It’s inspired by `dbhist.sh`, but implemented as a portable Rust CLI backed by
 
 ## Install
 
-### Recommended: download a prebuilt binary
+### Option 1 (recommended): Homebrew
+
+```bash
+brew tap mgd43b/taps
+brew install sdbh
+```
+
+### Option 2: Download a prebuilt binary
 Download the right binary for your OS from the **latest GitHub Release**:
 
 https://github.com/mgd43b/shelldbhist/releases/latest
 
 (Assets include macOS/Linux/Windows builds.)
 
-### Build from source
+### Option 3: Build from source
+
 ```bash
 git clone https://github.com/mgd43b/shelldbhist.git
 cd shelldbhist
+
+# build the binary
 cargo build --release
 
-# optional
+# optional: install somewhere on your PATH
 cp target/release/sdbh /usr/local/bin/sdbh
 ```
 
