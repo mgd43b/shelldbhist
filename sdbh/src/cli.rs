@@ -1,6 +1,9 @@
-use crate::db::{ensure_hash_index, import_from_db, insert_history, open_db};
+use crate::db::{
+    delete_history_by_ids, ensure_hash_index, import_from_db, insert_history, open_db,
+    preview_delete,
+};
 use crate::domain::{DbConfig, HistoryRow};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
@@ -56,6 +59,9 @@ pub enum Commands {
 
     /// Command template system for reusable command patterns
     Template(TemplateArgs),
+
+    /// Delete history entries by ID (WARNING: permanent deletion)
+    Delete(DeleteArgs),
 
     /// Show version information
     Version,
@@ -451,6 +457,24 @@ pub struct TemplateArgs {
     pub multi_select: bool,
 }
 
+#[derive(Parser, Debug)]
+pub struct DeleteArgs {
+    /// IDs to delete (single: 5, range: 1-4 or 1..4, comma-separated: 1,3,5, mixed: 1,3-5,7)
+    pub ids: String,
+
+    /// Show what would be deleted without actually deleting
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Skip confirmation prompt
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+
+    /// Output format for confirmation
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    pub format: OutputFormat,
+}
+
 pub fn run(cli: Cli) -> Result<()> {
     let db_path = cli.db.unwrap_or_else(DbConfig::default_path);
     let cfg = DbConfig { path: db_path };
@@ -469,11 +493,190 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Shell(args) => cmd_shell(args),
         Commands::Preview(args) => cmd_preview(cfg, args),
         Commands::Template(args) => cmd_template(cfg, args),
+        Commands::Delete(args) => cmd_delete(cfg, args),
         Commands::Version => {
             println!("sdbh {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
     }
+}
+
+fn cmd_delete(cfg: DbConfig, args: DeleteArgs) -> Result<()> {
+    let mut conn = open_db(&cfg)?;
+
+    // Parse IDs from the input string
+    let ids = parse_ids(&args.ids)?;
+
+    if ids.is_empty() {
+        anyhow::bail!("No valid IDs provided");
+    }
+
+    // Preview what would be deleted
+    let preview_rows = preview_delete(&conn, &ids)?;
+
+    if preview_rows.is_empty() {
+        println!("No matching entries found for the provided IDs");
+        return Ok(());
+    }
+
+    // Display preview
+    println!("Entries to be deleted ({} total):", preview_rows.len());
+    println!("{}", "━".repeat(80));
+
+    match args.format {
+        OutputFormat::Table => {
+            for (id, row) in &preview_rows {
+                let dt = format_timestamp(row.epoch);
+                println!("{:>6} | {} | {} | {}", id, dt, row.pwd, row.cmd);
+            }
+        }
+        OutputFormat::Json => {
+            print!("[");
+            let mut first = true;
+            for (id, row) in &preview_rows {
+                if !first {
+                    print!(",");
+                }
+                first = false;
+                print!(
+                    "{{\"id\":{},\"epoch\":{},\"pwd\":{},\"cmd\":{}}}",
+                    id,
+                    row.epoch,
+                    json_string(&row.pwd),
+                    json_string(&row.cmd)
+                );
+            }
+            println!("]");
+        }
+    }
+
+    println!("{}", "━".repeat(80));
+
+    // If dry-run, stop here
+    if args.dry_run {
+        println!("DRY RUN: No entries were deleted (use without --dry-run to actually delete)");
+        return Ok(());
+    }
+
+    // Get confirmation unless --yes flag is set
+    if !args.yes {
+        let confirm = dialoguer::Confirm::new()
+            .with_prompt(format!(
+                "Are you sure you want to permanently delete {} entries?",
+                preview_rows.len()
+            ))
+            .default(false)
+            .interact()?;
+
+        if !confirm {
+            println!("Deletion cancelled");
+            return Ok(());
+        }
+    }
+
+    // Perform the deletion
+    let deleted_ids = delete_history_by_ids(&mut conn, &ids)?;
+
+    // Report results
+    if deleted_ids.len() == preview_rows.len() {
+        println!("✓ Successfully deleted {} entries", deleted_ids.len());
+    } else {
+        println!(
+            "⚠ Deleted {} out of {} entries (some may have been already deleted)",
+            deleted_ids.len(),
+            preview_rows.len()
+        );
+    }
+
+    Ok(())
+}
+
+/// Parse ID string supporting multiple formats:
+/// - Single: "5" -> [5]
+/// - Range: "1-4" or "1..4" -> [1, 2, 3, 4]
+/// - Comma-separated: "1,3,5" -> [1, 3, 5]
+/// - Mixed: "1,3-5,7" -> [1, 3, 4, 5, 7]
+fn parse_ids(input: &str) -> Result<Vec<i64>> {
+    let mut ids = Vec::new();
+
+    // Split by comma
+    for part in input.split(',') {
+        let part = part.trim();
+
+        if part.is_empty() {
+            continue;
+        }
+
+        // Check if it's a range (contains '-' or '..')
+        if let Some(range_sep_pos) = part.find("..") {
+            // Handle ".." style range
+            let start = part[..range_sep_pos]
+                .trim()
+                .parse::<i64>()
+                .with_context(|| format!("Invalid range start in '{}'", part))?;
+            let end = part[range_sep_pos + 2..]
+                .trim()
+                .parse::<i64>()
+                .with_context(|| format!("Invalid range end in '{}'", part))?;
+
+            if start > end {
+                anyhow::bail!(
+                    "Invalid range '{}': start ({}) is greater than end ({})",
+                    part,
+                    start,
+                    end
+                );
+            }
+
+            for id in start..=end {
+                ids.push(id);
+            }
+        } else if let Some(dash_pos) = part.find('-') {
+            // Make sure it's not a negative number (starts with -)
+            if dash_pos == 0 {
+                // Negative number
+                let id = part
+                    .parse::<i64>()
+                    .with_context(|| format!("Invalid ID '{}'", part))?;
+                ids.push(id);
+            } else {
+                // Range with dash
+                let start = part[..dash_pos]
+                    .trim()
+                    .parse::<i64>()
+                    .with_context(|| format!("Invalid range start in '{}'", part))?;
+                let end = part[dash_pos + 1..]
+                    .trim()
+                    .parse::<i64>()
+                    .with_context(|| format!("Invalid range end in '{}'", part))?;
+
+                if start > end {
+                    anyhow::bail!(
+                        "Invalid range '{}': start ({}) is greater than end ({})",
+                        part,
+                        start,
+                        end
+                    );
+                }
+
+                for id in start..=end {
+                    ids.push(id);
+                }
+            }
+        } else {
+            // Single ID
+            let id = part
+                .parse::<i64>()
+                .with_context(|| format!("Invalid ID '{}'", part))?;
+            ids.push(id);
+        }
+    }
+
+    // Remove duplicates and sort
+    ids.sort_unstable();
+    ids.dedup();
+
+    Ok(ids)
 }
 
 fn cmd_log(cfg: DbConfig, args: LogArgs) -> Result<()> {

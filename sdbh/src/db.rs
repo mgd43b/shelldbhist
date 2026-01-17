@@ -1,6 +1,6 @@
 use crate::domain::{DbConfig, HistoryRow};
 use anyhow::{Context, Result};
-use rusqlite::{Connection, params, types::Value};
+use rusqlite::{Connection, OptionalExtension, params, types::Value};
 use sha2::{Digest, Sha256};
 
 pub fn open_db(cfg: &DbConfig) -> Result<Connection> {
@@ -256,4 +256,72 @@ fn value_to_i64(v: &Value) -> Option<i64> {
         }
         Value::Blob(_) => None,
     }
+}
+
+/// Delete history entries by their IDs and return the list of actually deleted IDs
+pub fn delete_history_by_ids(conn: &mut Connection, ids: &[i64]) -> Result<Vec<i64>> {
+    let mut deleted_ids = Vec::new();
+
+    let tx = conn.transaction()?;
+
+    for id in ids {
+        // First, get the hash for this row (for cleanup)
+        let hash_opt: Option<String> = tx
+            .query_row(
+                "SELECT hash FROM history_hash WHERE history_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        // Delete from history table
+        let affected = tx.execute("DELETE FROM history WHERE id = ?1", params![id])?;
+
+        if affected > 0 {
+            deleted_ids.push(*id);
+
+            // Clean up history_hash table
+            if let Some(hash) = hash_opt {
+                tx.execute("DELETE FROM history_hash WHERE hash = ?1", params![hash])?;
+            }
+        }
+    }
+
+    tx.commit()?;
+    Ok(deleted_ids)
+}
+
+/// Preview which entries would be deleted (returns rows with their IDs)
+pub fn preview_delete(conn: &Connection, ids: &[i64]) -> Result<Vec<(i64, HistoryRow)>> {
+    let mut rows = Vec::new();
+
+    if ids.is_empty() {
+        return Ok(rows);
+    }
+
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT id, hist_id, cmd, epoch, ppid, pwd, salt FROM history WHERE id IN ({}) ORDER BY id ASC",
+        placeholders
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params: Vec<&dyn rusqlite::ToSql> =
+        ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+
+    let mut query_rows = stmt.query(params.as_slice())?;
+    while let Some(r) = query_rows.next()? {
+        let id: i64 = r.get(0)?;
+        let row = HistoryRow {
+            hist_id: r.get(1)?,
+            cmd: r.get(2)?,
+            epoch: r.get(3)?,
+            ppid: r.get(4)?,
+            pwd: r.get(5)?,
+            salt: r.get(6)?,
+        };
+        rows.push((id, row));
+    }
+
+    Ok(rows)
 }
