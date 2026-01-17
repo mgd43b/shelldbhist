@@ -1,11 +1,11 @@
 {
-  "release-type": "simple",
+  "release-type": "rust",
   "include-v-in-tag": true,
   "include-component-in-tag": false,
   "packages": {
     "sdbh": {
       "path": "sdbh",
-      "release-type": "simple"
+      "release-type": "rust"
     }
   }
 }
