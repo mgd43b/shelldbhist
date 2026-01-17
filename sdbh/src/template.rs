@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 /// Template parsing and management engine
@@ -245,7 +246,7 @@ impl TemplateEngine {
         }
 
         // Check if we're in an interactive environment
-        let is_interactive = atty::is(atty::Stream::Stdin);
+        let is_interactive = std::io::stdin().is_terminal();
 
         // Prompt for missing variables interactively (only if interactive)
         if !missing_vars.is_empty() {
