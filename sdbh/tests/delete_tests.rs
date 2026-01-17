@@ -56,7 +56,7 @@ fn delete_single_id() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Deleted 1 entries"));
+        .stdout(predicate::str::contains("Successfully deleted 1 entries"));
 
     // Verify entry 5 is gone but others remain
     let output = sdbh_cmd()
@@ -93,7 +93,7 @@ fn delete_range_of_ids() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Deleted 4 entries"));
+        .stdout(predicate::str::contains("Successfully deleted 4 entries"));
 
     // Verify entries 3-6 are gone
     let output = sdbh_cmd()
@@ -134,7 +134,7 @@ fn delete_range_with_double_dots() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Deleted 4 entries"));
+        .stdout(predicate::str::contains("Successfully deleted 4 entries"));
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn delete_comma_separated_ids() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Deleted 3 entries"));
+        .stdout(predicate::str::contains("Successfully deleted 3 entries"));
 
     let output = sdbh_cmd()
         .args([
@@ -191,7 +191,7 @@ fn delete_mixed_format() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Deleted 5 entries"));
+        .stdout(predicate::str::contains("Successfully deleted 5 entries"));
 
     let output = sdbh_cmd()
         .args([
@@ -206,7 +206,9 @@ fn delete_mixed_format() {
         .unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(!stdout.contains("echo test1"));
+
+    // Use newline to avoid false positives with test10 containing test1
+    assert!(!stdout.contains("echo test1\n"));
     assert!(!stdout.contains("echo test3"));
     assert!(!stdout.contains("echo test4"));
     assert!(!stdout.contains("echo test5"));
@@ -250,7 +252,7 @@ fn delete_partial_match() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Deleted 1 entries"));
+        .stdout(predicate::str::contains("Successfully deleted 1 entries"));
 }
 
 #[test]
@@ -269,8 +271,8 @@ fn delete_dry_run_mode() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("5 entries will be deleted"))
-        .stdout(predicate::str::contains("Dry run - nothing deleted"));
+        .stdout(predicate::str::contains("Entries to be deleted (5 total)"))
+        .stdout(predicate::str::contains("DRY RUN: No entries were deleted"));
 
     // Verify nothing was actually deleted
     let output = sdbh_cmd()
@@ -309,8 +311,8 @@ fn delete_with_yes_flag_skips_confirmation() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Should not contain confirmation prompt
-    assert!(!stdout.contains("Delete these"));
-    assert!(stdout.contains("Deleted 1 entries"));
+    assert!(!stdout.contains("Are you sure"));
+    assert!(stdout.contains("Successfully deleted 1 entries"));
 }
 
 #[test]
@@ -367,7 +369,7 @@ fn delete_invalid_format_multiple_dashes() {
         ])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("Invalid range format"));
+        .stderr(predicate::str::contains("Invalid range end"));
 }
 
 #[test]
@@ -440,7 +442,7 @@ fn delete_with_spaces_in_id_spec() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Deleted 5 entries"));
+        .stdout(predicate::str::contains("Successfully deleted 5 entries"));
 }
 
 #[test]
@@ -459,7 +461,7 @@ fn delete_duplicate_ids_in_spec() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Deleted 1 entries"));
+        .stdout(predicate::str::contains("Successfully deleted 1 entries"));
 }
 
 #[test]
@@ -472,7 +474,7 @@ fn delete_empty_id_spec() {
         .args(["--db", db.to_string_lossy().as_ref(), "delete", "", "--yes"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("No valid IDs specified"));
+        .stderr(predicate::str::contains("No valid IDs provided"));
 }
 
 #[test]
@@ -491,7 +493,7 @@ fn delete_shows_preview_table() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("3 entries will be deleted"))
+        .stdout(predicate::str::contains("Entries to be deleted (3 total)"))
         .stdout(predicate::str::contains("echo test1"))
         .stdout(predicate::str::contains("echo test2"))
         .stdout(predicate::str::contains("echo test3"));
