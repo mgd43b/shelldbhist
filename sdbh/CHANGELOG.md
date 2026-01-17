@@ -1,22 +1,5 @@
 # Changelog
 
-## [0.13.0](https://github.com/mgd43b/shelldbhist/compare/v0.12.0...v0.13.0) (2026-01-17)
-
-
-### Features
-
-* add delete command with flexible ID parsing and preview ([65847f8](https://github.com/mgd43b/shelldbhist/commit/65847f834a86e5f2164ba729fb5b859550b7334b))
-* implement Command Templates System ([3e5f9ea](https://github.com/mgd43b/shelldbhist/commit/3e5f9ea91983463669f3139ed380a5d0976627d0))
-* implement command templates system infrastructure ([892fdcf](https://github.com/mgd43b/shelldbhist/commit/892fdcfb5e39e371d3f1e12d78ee74473dd6a62d))
-
-
-### Bug Fixes
-
-* correct delete test assertions to match actual output ([dd71189](https://github.com/mgd43b/shelldbhist/commit/dd7118939b90736a8eb3a8f29d21f4fcc5cf2a7d))
-* **db:** ensure performance indexes are created automatically on clean installs ([4f00a6c](https://github.com/mgd43b/shelldbhist/commit/4f00a6c30f75e0129fb7b2f9f24e794ffa1d07a3))
-* resolve dialoguer 0.12.0 dependency breaking tests ([1c36a72](https://github.com/mgd43b/shelldbhist/commit/1c36a72601cd609ff3a612e396f2223464de754e))
-* update template_file_operations_error_handling test for dialoguer 0.12.0 ([f322a6a](https://github.com/mgd43b/shelldbhist/commit/f322a6af7e79d5b1c78c9a36d77614b8798bf3e1))
-
 ## [0.12.0](https://github.com/mgd43b/shelldbhist/compare/v0.11.0...v0.12.0) (2025-12-31)
 
 
