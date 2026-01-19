@@ -2484,9 +2484,40 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
 
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
-        let p = dir.join(bin);
-        if p.exists() {
-            return Some(p);
+        // On Windows, when searching PATH, respect PATHEXT semantics.
+        // If the caller asked for `fzf` but `fzf.exe` exists in the directory,
+        // we should treat it as found.
+        #[cfg(windows)]
+        {
+            // If bin already has an extension, just check it directly.
+            if bin_path.extension().is_some() {
+                let p = dir.join(bin);
+                if p.exists() {
+                    return Some(p);
+                }
+            } else {
+                // Try common executable extensions.
+                for ext in ["exe", "cmd", "bat", "com"] {
+                    let p = dir.join(format!("{}.{}", bin, ext));
+                    if p.exists() {
+                        return Some(p);
+                    }
+                }
+
+                // Also check extensionless (rare, but keep behavior consistent)
+                let p = dir.join(bin);
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+
+        #[cfg(not(windows))]
+        {
+            let p = dir.join(bin);
+            if p.exists() {
+                return Some(p);
+            }
         }
     }
     None

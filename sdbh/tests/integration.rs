@@ -1909,7 +1909,9 @@ fn doctor_reports_fzf_found_when_configured_binary_path_exists() {
     // Create a fake fzf binary.
     let fake_bin_dir = home.join("bin");
     std::fs::create_dir_all(&fake_bin_dir).unwrap();
-    // Use an .exe extension on Windows so the binary can be located reliably.
+    // Use an .exe extension on Windows so the binary can be located reliably,
+    // and configure the binary_path without the extension to ensure our
+    // PATH resolution respects Windows PATHEXT behavior.
     let fake_fzf = if cfg!(windows) {
         fake_bin_dir.join("fzf.exe")
     } else {
@@ -1927,15 +1929,26 @@ fn doctor_reports_fzf_found_when_configured_binary_path_exists() {
     }
 
     // Point config at the fake fzf path.
+    // On Windows, intentionally omit the `.exe` extension to validate that `which()`
+    // respects PATHEXT when searching PATH.
+    let configured_fzf = if cfg!(windows) {
+        fake_fzf.with_extension("")
+    } else {
+        fake_fzf.clone()
+    };
     std::fs::write(
         home.join(".sdbh.toml"),
-        format!("[fzf]\nbinary_path = \"{}\"\n", fake_fzf.to_string_lossy()),
+        format!(
+            "[fzf]\nbinary_path = \"{}\"\n",
+            configured_fzf.to_string_lossy()
+        ),
     )
     .unwrap();
 
     // Use --no-spawn to avoid bash/zsh checks; ensure HOME is set so config loads.
     sdbh_cmd()
         .env("HOME", home)
+        .env("PATH", fake_bin_dir.to_string_lossy().as_ref())
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
