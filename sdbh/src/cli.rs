@@ -2512,7 +2512,14 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
     }
 
     let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
+    find_on_path(bin, &path)
+}
+
+fn find_on_path(bin: &str, path: &std::ffi::OsStr) -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    let bin_path = std::path::Path::new(bin);
+
+    for dir in std::env::split_paths(path) {
         // On Windows, when searching PATH, respect PATHEXT semantics.
         // If the caller asked for `fzf` but `fzf.exe` exists in the directory,
         // we should treat it as found.
@@ -4372,10 +4379,100 @@ fn create_template_interactive(engine: &crate::template::TemplateEngine, name: &
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn escape_like_escapes_wildcards() {
         assert_eq!(escape_like("a%b_c\\d"), "a\\%b\\_c\\\\d");
+    }
+
+    #[test]
+    fn which_respects_path_like_input() {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("fzf");
+        std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&bin, perms).unwrap();
+        }
+
+        let found = which(bin.to_string_lossy().as_ref());
+        assert_eq!(found.as_ref(), Some(&bin));
+    }
+
+    #[test]
+    fn which_finds_binary_on_path() {
+        let tmp = TempDir::new().unwrap();
+        let bin_dir = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let bin = bin_dir.join("fzf");
+        std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&bin, perms).unwrap();
+        }
+
+        let original_path = std::env::var_os("PATH");
+        let mut paths = vec![bin_dir.clone().into_os_string()];
+        if let Some(path) = &original_path {
+            paths.extend(std::env::split_paths(path).map(|p| p.into_os_string()));
+        }
+        let new_path = std::env::join_paths(paths).unwrap();
+        unsafe {
+            std::env::set_var("PATH", &new_path);
+        }
+
+        let found = find_on_path("fzf", &new_path);
+        assert_eq!(found.as_ref(), Some(&bin));
+
+        unsafe {
+            if let Some(path) = original_path {
+                std::env::set_var("PATH", path);
+            } else {
+                std::env::remove_var("PATH");
+            }
+        }
+    }
+
+    #[test]
+    fn config_path_prefers_home_env() {
+        let tmp = TempDir::new().unwrap();
+        let fake_home = tmp.path().join("home");
+        let fake_profile = tmp.path().join("profile");
+        std::fs::create_dir_all(&fake_home).unwrap();
+        std::fs::create_dir_all(&fake_profile).unwrap();
+
+        let original_home = std::env::var_os("HOME");
+        let original_profile = std::env::var_os("USERPROFILE");
+
+        unsafe {
+            std::env::set_var("HOME", &fake_home);
+            std::env::set_var("USERPROFILE", &fake_profile);
+        }
+
+        let resolved = config_path().unwrap();
+        assert_eq!(resolved, fake_home.join(".sdbh.toml"));
+
+        unsafe {
+            if let Some(home) = original_home {
+                std::env::set_var("HOME", home);
+            } else {
+                std::env::remove_var("HOME");
+            }
+            if let Some(profile) = original_profile {
+                std::env::set_var("USERPROFILE", profile);
+            } else {
+                std::env::remove_var("USERPROFILE");
+            }
+        }
     }
 
     #[test]
