@@ -1,3 +1,5 @@
+use crate::cleanup::{analyze_command_for_garbage, analyze_command_for_garbage_with_config, score_to_confidence_level, GarbageCandidate};
+use crate::config::CleanupConfig;
 use crate::domain::{DbConfig, HistoryRow};
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params, types::Value};
@@ -324,4 +326,290 @@ pub fn preview_delete(conn: &Connection, ids: &[i64]) -> Result<Vec<(i64, Histor
     }
 
     Ok(rows)
+}
+
+/// Scan database for potential garbage entries
+/// Returns a list of candidates with their garbage analysis scores
+pub fn scan_garbage_candidates(
+    conn: &Connection,
+    min_score: Option<f32>,
+) -> Result<Vec<GarbageCandidate>> {
+    scan_garbage_candidates_with_config(conn, min_score, &CleanupConfig::default())
+}
+
+/// Scan database for potential garbage entries with custom configuration
+/// Returns a list of candidates with their garbage analysis scores
+pub fn scan_garbage_candidates_with_config(
+    conn: &Connection,
+    min_score: Option<f32>,
+    config: &CleanupConfig,
+) -> Result<Vec<GarbageCandidate>> {
+    let mut candidates = Vec::new();
+
+    // Query all history entries
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, cmd, epoch, pwd
+        FROM history
+        ORDER BY id ASC
+        "#,
+    )?;
+
+    let mut rows = stmt.query([])?;
+
+    while let Some(row) = rows.next()? {
+        let id: i64 = row.get(0)?;
+        let cmd: String = row.get(1)?;
+        let epoch: i64 = row.get(2)?;
+        let pwd: String = row.get(3)?;
+
+        // Analyze command for garbage with config
+        let (confidence_score, reasons) = analyze_command_for_garbage_with_config(&cmd, config);
+
+        // Apply minimum score filter if specified
+        if let Some(min) = min_score {
+            if confidence_score < min {
+                continue;
+            }
+        }
+
+        // Only include if score is above 0 (has some indication of garbage)
+        if confidence_score > 0.0 {
+            let confidence_level = score_to_confidence_level(confidence_score);
+
+            candidates.push(GarbageCandidate {
+                id,
+                cmd,
+                epoch,
+                pwd,
+                size_bytes: row.get::<_, String>(1)?.len(),
+                confidence_score,
+                confidence_level,
+                reasons,
+            });
+        }
+    }
+
+    Ok(candidates)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_scan_garbage_finds_binary_content() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.db");
+        
+        let cfg = DbConfig { path: db_path.clone() };
+        let mut conn = open_db(&cfg).unwrap();
+
+        // Insert normal command
+        let normal_row = HistoryRow {
+            hist_id: Some(1),
+            cmd: "echo hello".to_string(),
+            epoch: 1700000000,
+            ppid: 123,
+            pwd: "/tmp".to_string(),
+            salt: 42,
+        };
+        insert_history(&mut conn, &normal_row).unwrap();
+
+        // Insert binary command
+        let binary_cmd = format!("{}garbage", "\x7fELF\x02\x01\x01\x00");
+        let binary_row = HistoryRow {
+            hist_id: Some(2),
+            cmd: binary_cmd.clone(),
+            epoch: 1700000001,
+            ppid: 123,
+            pwd: "/tmp".to_string(),
+            salt: 42,
+        };
+        insert_history(&mut conn, &binary_row).unwrap();
+
+        // Scan for garbage
+        let candidates = scan_garbage_candidates(&conn, None).unwrap();
+        
+        assert!(candidates.len() >= 1, "Expected at least 1 candidate");
+        
+        let binary_candidate = candidates.iter().find(|c| c.cmd.contains("ELF")).expect("Should find binary");
+        assert!(binary_candidate.confidence_score >= 50.0);
+        assert!(binary_candidate.reasons.iter().any(|r| r.contains("Binary file magic")));
+    }
+
+    #[test]
+    fn test_scan_garbage_respects_min_score() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.db");
+        
+        let cfg = DbConfig { path: db_path.clone() };
+        let mut conn = open_db(&cfg).unwrap();
+
+        // Insert commands with different scores
+        let normal_row = HistoryRow {
+            hist_id: Some(1),
+            cmd: "echo hello".to_string(),
+            epoch: 1700000000,
+            ppid: 123,
+            pwd: "/tmp".to_string(),
+            salt: 42,
+        };
+        insert_history(&mut conn, &normal_row).unwrap();
+
+        let repetitive_row = HistoryRow {
+            hist_id: Some(2),
+            cmd: "abc".repeat(500),
+            epoch: 1700000001,
+            ppid: 123,
+            pwd: "/tmp".to_string(),
+            salt: 42,
+        };
+        insert_history(&mut conn, &repetitive_row).unwrap();
+
+        let binary_row = HistoryRow {
+            hist_id: Some(3),
+            cmd: format!("{}data", "\x7fELF"),
+            epoch: 1700000002,
+            ppid: 123,
+            pwd: "/tmp".to_string(),
+            salt: 42,
+        };
+        insert_history(&mut conn, &binary_row).unwrap();
+
+        // Test different thresholds
+        let all = scan_garbage_candidates(&conn, None).unwrap();
+        assert!(all.len() >= 2);
+
+        // Binary magic alone gives 50 points, which is moderate confidence
+        // Test with 50.0 threshold to catch high-scoring items
+        let high_conf = scan_garbage_candidates(&conn, Some(50.0)).unwrap();
+        assert!(high_conf.len() >= 1, "Should find at least binary with score >= 50");
+        assert!(high_conf.iter().all(|c| c.confidence_score >= 50.0));
+
+        let moderate_conf = scan_garbage_candidates(&conn, Some(30.0)).unwrap();
+        assert!(moderate_conf.len() >= 2);
+        assert!(moderate_conf.iter().all(|c| c.confidence_score >= 30.0));
+    }
+
+    #[test]
+    fn test_scan_garbage_returns_complete_metadata() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.db");
+        
+        let cfg = DbConfig { path: db_path.clone() };
+        let mut conn = open_db(&cfg).unwrap();
+
+        let binary_cmd = "\x7fELFbinary";
+        let row = HistoryRow {
+            hist_id: Some(1),
+            cmd: binary_cmd.to_string(),
+            epoch: 1700000000,
+            ppid: 123,
+            pwd: "/home/test".to_string(),
+            salt: 42,
+        };
+        insert_history(&mut conn, &row).unwrap();
+
+        let candidates = scan_garbage_candidates(&conn, None).unwrap();
+        assert!(!candidates.is_empty());
+
+        let candidate = &candidates[0];
+        assert!(candidate.id > 0);
+        assert_eq!(candidate.cmd, binary_cmd);
+        assert_eq!(candidate.epoch, 1700000000);
+        assert_eq!(candidate.pwd, "/home/test");
+        assert_eq!(candidate.size_bytes, binary_cmd.len());
+        assert!(candidate.confidence_score >= 50.0);
+        assert!(!candidate.reasons.is_empty());
+    }
+
+    #[test]
+    fn test_scan_garbage_empty_database() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.db");
+        
+        let cfg = DbConfig { path: db_path };
+        let conn = open_db(&cfg).unwrap();
+
+        let candidates = scan_garbage_candidates(&conn, None).unwrap();
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_scan_garbage_skips_legitimate_commands() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.db");
+        
+        let cfg = DbConfig { path: db_path.clone() };
+        let mut conn = open_db(&cfg).unwrap();
+
+        let legitimate = vec![
+            "git status",
+            "ls -la /home/user",
+            "SELECT * FROM users WHERE id > 100",
+            "curl -X POST https://api.example.com -d '{\"key\":\"value\"}'",
+        ];
+
+        for (i, cmd) in legitimate.iter().enumerate() {
+            let row = HistoryRow {
+                hist_id: Some(i as i64 + 1),
+                cmd: cmd.to_string(),
+                epoch: 1700000000 + i as i64,
+                ppid: 123,
+                pwd: "/tmp".to_string(),
+                salt: 42,
+            };
+            insert_history(&mut conn, &row).unwrap();
+        }
+
+        let candidates = scan_garbage_candidates(&conn, Some(30.0)).unwrap();
+        assert_eq!(candidates.len(), 0);
+    }
+
+    #[test]
+    fn test_scan_garbage_identifies_various_types() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.db");
+        
+        let cfg = DbConfig { path: db_path.clone() };
+        let mut conn = open_db(&cfg).unwrap();
+
+        // Create strings that need to live long enough
+        let large_cmd = "x".repeat(11000);
+        let repetitive_cmd = "abc".repeat(600);
+        
+        let garbage = vec![
+            "\x7fELF\x02\x01\x01binary",
+            "command\0with\0nulls",
+            large_cmd.as_str(),
+            repetitive_cmd.as_str(),
+        ];
+
+        for (i, cmd) in garbage.iter().enumerate() {
+            let row = HistoryRow {
+                hist_id: Some(i as i64 + 1),
+                cmd: cmd.to_string(),
+                epoch: 1700000000 + i as i64,
+                ppid: 123,
+                pwd: "/tmp".to_string(),
+                salt: 42,
+            };
+            insert_history(&mut conn, &row).unwrap();
+        }
+
+        let candidates = scan_garbage_candidates(&conn, Some(30.0)).unwrap();
+        assert!(candidates.len() >= 4);
+
+        let has_binary = candidates.iter().any(|c| c.reasons.iter().any(|r| r.contains("Binary")));
+        let has_null = candidates.iter().any(|c| c.reasons.iter().any(|r| r.contains("Null bytes")));
+        let has_large = candidates.iter().any(|c| c.reasons.iter().any(|r| r.contains("Very large")));
+        let has_repetitive = candidates.iter().any(|c| c.reasons.iter().any(|r| r.contains("Repetitive")));
+
+        assert!(has_binary);
+        assert!(has_null);
+        assert!(has_large);
+        assert!(has_repetitive);
+    }
 }

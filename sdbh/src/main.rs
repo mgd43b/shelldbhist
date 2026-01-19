@@ -1,4 +1,6 @@
 mod cli;
+mod cleanup;
+mod config;
 mod db;
 mod domain;
 mod template;

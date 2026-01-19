@@ -1,6 +1,6 @@
 use crate::db::{
     delete_history_by_ids, ensure_hash_index, import_from_db, insert_history, open_db,
-    preview_delete,
+    preview_delete, scan_garbage_candidates,
 };
 use crate::domain::{DbConfig, HistoryRow};
 use anyhow::{Context, Result};
@@ -62,6 +62,9 @@ pub enum Commands {
 
     /// Delete history entries by ID (WARNING: permanent deletion)
     Delete(DeleteArgs),
+
+    /// Clean up garbage/noisy entries from history
+    Cleanup(CleanupArgs),
 
     /// Show version information
     Version,
@@ -475,6 +478,33 @@ pub struct DeleteArgs {
     pub format: OutputFormat,
 }
 
+#[derive(Parser, Debug)]
+pub struct CleanupArgs {
+    /// Scan mode: show garbage candidates without deleting
+    #[arg(long)]
+    pub scan: bool,
+
+    /// Interactive mode: review and selectively delete
+    #[arg(long, conflicts_with = "scan", conflicts_with = "auto")]
+    pub interactive: bool,
+
+    /// Auto mode: automatically delete high-confidence garbage
+    #[arg(long, conflicts_with = "scan", conflicts_with = "interactive")]
+    pub auto: bool,
+
+    /// Minimum confidence score (0-100)
+    #[arg(long, default_value_t = 0.0)]
+    pub min_score: f32,
+
+    /// Output format (table or json)
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    pub format: OutputFormat,
+
+    /// Skip confirmation prompt (for --auto mode)
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+}
+
 pub fn run(cli: Cli) -> Result<()> {
     let db_path = cli.db.unwrap_or_else(DbConfig::default_path);
     let cfg = DbConfig { path: db_path };
@@ -494,11 +524,252 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Preview(args) => cmd_preview(cfg, args),
         Commands::Template(args) => cmd_template(cfg, args),
         Commands::Delete(args) => cmd_delete(cfg, args),
+        Commands::Cleanup(args) => cmd_cleanup(cfg, args),
         Commands::Version => {
             println!("sdbh {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
     }
+}
+
+fn cmd_cleanup(cfg: DbConfig, args: CleanupArgs) -> Result<()> {
+    let conn = open_db(&cfg)?;
+
+    // Determine the mode (default to scan if no mode specified)
+    let mode = if args.auto {
+        CleanupMode::Auto
+    } else if args.interactive {
+        CleanupMode::Interactive
+    } else {
+        CleanupMode::Scan
+    };
+
+    // Scan for garbage candidates
+    let min_score = if args.min_score > 0.0 {
+        Some(args.min_score)
+    } else {
+        None
+    };
+
+    let candidates = scan_garbage_candidates(&conn, min_score)?;
+
+    if candidates.is_empty() {
+        println!("No garbage entries found matching criteria.");
+        return Ok(());
+    }
+
+    match mode {
+        CleanupMode::Scan => {
+            // Display candidates without deleting
+            display_cleanup_candidates(&candidates, args.format)?;
+        }
+        CleanupMode::Interactive => {
+            // Interactive mode: review and selectively delete
+            perform_interactive_cleanup(cfg, candidates, args.format)?;
+        }
+        CleanupMode::Auto => {
+            // Auto mode: delete high-confidence entries
+            perform_auto_cleanup(cfg, candidates, args.format, args.yes)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CleanupMode {
+    Scan,
+    Interactive,
+    Auto,
+}
+
+fn display_cleanup_candidates(
+    candidates: &[crate::cleanup::GarbageCandidate],
+    format: OutputFormat,
+) -> Result<()> {
+    match format {
+        OutputFormat::Table => {
+            println!("Found {} potential garbage entries:", candidates.len());
+            println!("{}", "━".repeat(80));
+        }
+        OutputFormat::Json => {
+            // No header for JSON format - output pure JSON only
+        }
+    }
+
+    match format {
+        OutputFormat::Table => {
+            for candidate in candidates {
+                let dt = format_timestamp(candidate.epoch);
+                let confidence = format!(
+                    "{:?} ({:.0})",
+                    candidate.confidence_level, candidate.confidence_score
+                );
+                
+                // Truncate command for display
+                let cmd_display = if candidate.cmd.len() > 60 {
+                    format!("{}...", &candidate.cmd[..57])
+                } else {
+                    candidate.cmd.clone()
+                };
+
+                println!(
+                    "{:>6} | {} | {:>20} | {}",
+                    candidate.id, dt, confidence, cmd_display
+                );
+                
+                // Show reasons indented
+                for reason in &candidate.reasons {
+                    println!("       | {}", reason);
+                }
+                println!("{}", "─".repeat(80));
+            }
+        }
+        OutputFormat::Json => {
+            print!("[");
+            let mut first = true;
+            for candidate in candidates {
+                if !first {
+                    print!(",");
+                }
+                first = false;
+                print!(
+                    "{{\"id\":{},\"epoch\":{},\"pwd\":{},\"cmd\":{},\"score\":{:.1},\"level\":{:?},\"reasons\":[",
+                    candidate.id,
+                    candidate.epoch,
+                    json_string(&candidate.pwd),
+                    json_string(&candidate.cmd),
+                    candidate.confidence_score,
+                    candidate.confidence_level
+                );
+                
+                let mut first_reason = true;
+                for reason in &candidate.reasons {
+                    if !first_reason {
+                        print!(",");
+                    }
+                    first_reason = false;
+                    print!("{}", json_string(reason));
+                }
+                print!("]}}");
+            }
+            println!("]");
+        }
+    }
+
+    Ok(())
+}
+
+fn perform_interactive_cleanup(
+    cfg: DbConfig,
+    candidates: Vec<crate::cleanup::GarbageCandidate>,
+    _format: OutputFormat,
+) -> Result<()> {
+    println!("Interactive cleanup mode");
+    println!("Review each candidate and choose whether to delete it.");
+    println!("{}", "━".repeat(80));
+
+    let mut to_delete = Vec::new();
+
+    for candidate in &candidates {
+        println!("\nID: {}", candidate.id);
+        println!("Command: {}", 
+            if candidate.cmd.len() > 200 {
+                format!("{}...", &candidate.cmd[..197])
+            } else {
+                candidate.cmd.clone()
+            }
+        );
+        println!("Date: {}", format_timestamp(candidate.epoch));
+        println!("Directory: {}", candidate.pwd);
+        println!("Confidence: {:?} ({:.0})", candidate.confidence_level, candidate.confidence_score);
+        println!("Reasons:");
+        for reason in &candidate.reasons {
+            println!("  • {}", reason);
+        }
+        println!("{}", "─".repeat(80));
+
+        let delete = dialoguer::Confirm::new()
+            .with_prompt("Delete this entry?")
+            .default(false)
+            .interact()?;
+
+        if delete {
+            to_delete.push(candidate.id);
+        }
+    }
+
+    if to_delete.is_empty() {
+        println!("\nNo entries selected for deletion.");
+        return Ok(());
+    }
+
+    println!("\n{} entries selected for deletion.", to_delete.len());
+    
+    let confirm = dialoguer::Confirm::new()
+        .with_prompt("Proceed with deletion?")
+        .default(false)
+        .interact()?;
+
+    if !confirm {
+        println!("Deletion cancelled.");
+        return Ok(());
+    }
+
+    // Perform deletion
+    let mut conn = open_db(&cfg)?;
+    let deleted_ids = delete_history_by_ids(&mut conn, &to_delete)?;
+    println!("✓ Successfully deleted {} entries", deleted_ids.len());
+
+    Ok(())
+}
+
+fn perform_auto_cleanup(
+    cfg: DbConfig,
+    candidates: Vec<crate::cleanup::GarbageCandidate>,
+    format: OutputFormat,
+    skip_confirm: bool,
+) -> Result<()> {
+    // Filter to high-confidence only
+    let high_confidence: Vec<_> = candidates
+        .into_iter()
+        .filter(|c| matches!(c.confidence_level, crate::cleanup::ConfidenceLevel::High))
+        .collect();
+
+    if high_confidence.is_empty() {
+        println!("No high-confidence garbage entries found.");
+        return Ok(());
+    }
+
+    println!("Auto cleanup mode: {} high-confidence entries identified", high_confidence.len());
+    println!("{}", "━".repeat(80));
+
+    // Display what will be deleted
+    display_cleanup_candidates(&high_confidence, format)?;
+
+    if !skip_confirm {
+        let confirm = dialoguer::Confirm::new()
+            .with_prompt(format!(
+                "Proceed with automatic deletion of {} high-confidence entries?",
+                high_confidence.len()
+            ))
+            .default(false)
+            .interact()?;
+
+        if !confirm {
+            println!("Deletion cancelled.");
+            return Ok(());
+        }
+    }
+
+    // Perform deletion
+    let ids_to_delete: Vec<i64> = high_confidence.iter().map(|c| c.id).collect();
+    let mut conn = open_db(&cfg)?;
+    let deleted_ids = delete_history_by_ids(&mut conn, &ids_to_delete)?;
+    
+    println!("✓ Successfully deleted {} entries", deleted_ids.len());
+
+    Ok(())
 }
 
 fn cmd_delete(cfg: DbConfig, args: DeleteArgs) -> Result<()> {
