@@ -1094,7 +1094,12 @@ impl LogFilter {
 
 fn config_path() -> Option<std::path::PathBuf> {
     // User-requested location: ~/.sdbh.toml
-    let home = std::env::var_os("HOME").or_else(|| dirs::home_dir().map(|p| p.into_os_string()))?;
+    // NOTE: On Windows, CI/tests often set HOME explicitly, but the platform's
+    // default home env var is USERPROFILE. Prefer HOME when present, then fall
+    // back to USERPROFILE, then dirs::home_dir().
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .or_else(|| dirs::home_dir().map(|p| p.into_os_string()))?;
     let mut p = std::path::PathBuf::from(home);
     p.push(".sdbh.toml");
     Some(p)
