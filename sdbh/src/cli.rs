@@ -2628,6 +2628,20 @@ fn find_on_path(bin: &str, path: &std::ffi::OsStr) -> Option<std::path::PathBuf>
     #[cfg(windows)]
     let bin_path = std::path::Path::new(bin);
 
+    #[cfg(windows)]
+    let pathext: Vec<String> = std::env::var("PATHEXT")
+        .unwrap_or_else(|_| String::from(".COM;.EXE;.BAT;.CMD"))
+        .split(';')
+        .filter_map(|s| {
+            let s = s.trim();
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_ascii_lowercase())
+            }
+        })
+        .collect();
+
     for dir in std::env::split_paths(path) {
         // On Windows, when searching PATH, respect PATHEXT semantics.
         // If the caller asked for `fzf` but `fzf.exe` exists in the directory,
@@ -2641,9 +2655,18 @@ fn find_on_path(bin: &str, path: &std::ffi::OsStr) -> Option<std::path::PathBuf>
                     return Some(p);
                 }
             } else {
-                // Try common executable extensions.
-                for ext in ["exe", "cmd", "bat", "com"] {
-                    let p = dir.join(format!("{}.{}", bin, ext));
+                // Try PATHEXT entries first, in order.
+                // PATHEXT entries include the dot (e.g. ".EXE"), so we append directly.
+                for ext in &pathext {
+                    let p = dir.join(format!("{bin}{ext}"));
+                    if p.exists() {
+                        return Some(p);
+                    }
+                }
+
+                // Fallback to common executable extensions.
+                for ext in [".exe", ".cmd", ".bat", ".com"] {
+                    let p = dir.join(format!("{bin}{ext}"));
                     if p.exists() {
                         return Some(p);
                     }
@@ -4496,7 +4519,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let bin_dir = tmp.path().join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
+        #[cfg(windows)]
+        let bin = bin_dir.join("fzf.exe");
+        #[cfg(not(windows))]
         let bin = bin_dir.join("fzf");
+
+        #[cfg(windows)]
+        std::fs::write(&bin, "").unwrap();
+        #[cfg(not(windows))]
         std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
 
         #[cfg(unix)]
@@ -4513,6 +4543,15 @@ mod tests {
             std::env::set_var("PATH", &new_path);
         }
 
+        // Ensure PATHEXT contains .EXE so our Windows lookup is stable in CI.
+        // (GitHub Actions usually sets this, but tests should be deterministic.)
+        #[cfg(windows)]
+        let original_pathext = std::env::var_os("PATHEXT");
+        #[cfg(windows)]
+        unsafe {
+            std::env::set_var("PATHEXT", ".EXE;.COM;.BAT;.CMD");
+        }
+
         // Regression: ensure a plain name like "fzf" does NOT get treated as a path.
         let found = which("fzf");
         assert_eq!(found.as_ref(), Some(&bin));
@@ -4522,6 +4561,15 @@ mod tests {
                 std::env::set_var("PATH", path);
             } else {
                 std::env::remove_var("PATH");
+            }
+
+            #[cfg(windows)]
+            {
+                if let Some(pathext) = original_pathext {
+                    std::env::set_var("PATHEXT", pathext);
+                } else {
+                    std::env::remove_var("PATHEXT");
+                }
             }
         }
     }
