@@ -15,9 +15,7 @@ pub struct TemplateEngine {
 impl TemplateEngine {
     /// Create a new template engine
     pub fn new() -> Result<Self> {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .context("Could not determine home directory")?;
+        let home = std::env::var("HOME").context("Could not determine home directory")?;
 
         let templates_dir = PathBuf::from(home).join(".sdbh").join("templates");
 
@@ -461,10 +459,9 @@ mod tests {
 
     #[test]
     fn test_template_engine_new_no_home() {
-        // Test without HOME or USERPROFILE
+        // Test without HOME
         unsafe {
             env::remove_var("HOME");
-            env::remove_var("USERPROFILE");
         }
 
         let result = TemplateEngine::new();

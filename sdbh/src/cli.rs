@@ -1094,12 +1094,7 @@ impl LogFilter {
 
 fn config_path() -> Option<std::path::PathBuf> {
     // User-requested location: ~/.sdbh.toml
-    // NOTE: On Windows, CI/tests often set HOME explicitly, but the platform's
-    // default home env var is USERPROFILE. Prefer HOME when present, then fall
-    // back to USERPROFILE, then dirs::home_dir().
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .or_else(|| dirs::home_dir().map(|p| p.into_os_string()))?;
+    let home = std::env::var_os("HOME").or_else(|| dirs::home_dir().map(|p| p.into_os_string()))?;
     let mut p = std::path::PathBuf::from(home);
     p.push(".sdbh.toml");
     Some(p)
@@ -2485,82 +2480,36 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
     if std::env::var("SDBH_DEBUG_WHICH").ok().as_deref() == Some("1") {
         eprintln!("[sdbh][debug] which() enter bin={bin:?}");
     }
-
     // If `bin` looks like a path (e.g. configured via fzf.binary_path), respect it.
-    // This matters on Windows where users may configure `C:\\...\\fzf.exe`, but also
-    // supports relative paths like `./fzf` or `bin/fzf`.
+    // This also supports relative paths like `./fzf` or `bin/fzf`.
     let bin_path = std::path::Path::new(bin);
     // NOTE: we only treat `bin` as a user-specified *path* if it is absolute or explicitly relative
     // (contains a path separator). A plain name like "fzf" should be searched on PATH.
     if bin_path.is_absolute() {
-        // On Windows, also respect PATHEXT-like behavior for configured path-like values.
-        // Users may configure `C:\\...\\fzf` while the actual file is `C:\\...\\fzf.exe`.
-        #[cfg(windows)]
-        {
-            if bin_path.exists() {
-                return Some(bin_path.to_path_buf());
-            }
-
-            if let Some(found) = try_windows_executable_extensions(bin_path) {
-                return Some(found);
-            }
-
-            return None;
+        let out = bin_path.exists().then(|| bin_path.to_path_buf());
+        #[cfg(debug_assertions)]
+        if std::env::var("SDBH_DEBUG_WHICH").ok().as_deref() == Some("1") {
+            eprintln!(
+                "[sdbh][debug] which() path-like input: exists={} => {:?}",
+                bin_path.exists(),
+                out.as_ref().map(|p| p.to_string_lossy())
+            );
         }
-
-        #[cfg(not(windows))]
-        {
-            let out = bin_path.exists().then(|| bin_path.to_path_buf());
-            #[cfg(debug_assertions)]
-            if std::env::var("SDBH_DEBUG_WHICH").ok().as_deref() == Some("1") {
-                eprintln!(
-                    "[sdbh][debug] which() path-like input: exists={} => {:?}",
-                    bin_path.exists(),
-                    out.as_ref().map(|p| p.to_string_lossy())
-                );
-            }
-            return out;
-        }
+        return out;
     }
 
-    #[cfg(not(windows))]
-    {
-        // Explicit relative path (e.g. "./fzf" or "bin/fzf")
-        if bin.contains(std::path::MAIN_SEPARATOR) {
-            let out = bin_path.exists().then(|| bin_path.to_path_buf());
-            #[cfg(debug_assertions)]
-            if std::env::var("SDBH_DEBUG_WHICH").ok().as_deref() == Some("1") {
-                eprintln!(
-                    "[sdbh][debug] which() explicit relative path: exists={} => {:?}",
-                    bin_path.exists(),
-                    out.as_ref().map(|p| p.to_string_lossy())
-                );
-            }
-            return out;
+    // Explicit relative path (e.g. "./fzf" or "bin/fzf")
+    if bin.contains(std::path::MAIN_SEPARATOR) {
+        let out = bin_path.exists().then(|| bin_path.to_path_buf());
+        #[cfg(debug_assertions)]
+        if std::env::var("SDBH_DEBUG_WHICH").ok().as_deref() == Some("1") {
+            eprintln!(
+                "[sdbh][debug] which() explicit relative path: exists={} => {:?}",
+                bin_path.exists(),
+                out.as_ref().map(|p| p.to_string_lossy())
+            );
         }
-    }
-
-    #[cfg(windows)]
-    {
-        // On Windows, treat values with a non-empty parent component (e.g. "bin\\fzf") as
-        // explicit paths.
-        //
-        // NOTE: Path::parent() is *always* Some() for relative paths like "fzf" on Windows
-        // (it returns an empty parent). We only want to treat this as explicit when the
-        // parent is non-empty (i.e., the input actually contains path separators).
-        if bin_path.parent().is_some_and(|p| !p.as_os_str().is_empty()) {
-            // On Windows, also respect PATHEXT-like behavior for configured path-like values.
-            // Users may configure `C:\\...\\fzf` while the actual file is `C:\\...\\fzf.exe`.
-            if bin_path.exists() {
-                return Some(bin_path.to_path_buf());
-            }
-
-            if let Some(found) = try_windows_executable_extensions(bin_path) {
-                return Some(found);
-            }
-
-            return None;
-        }
+        return out;
     }
 
     let path = std::env::var_os("PATH")?;
@@ -2573,20 +2522,6 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
         );
     }
     out
-}
-
-#[cfg(windows)]
-fn try_windows_executable_extensions(path: &std::path::Path) -> Option<std::path::PathBuf> {
-    // If no extension was specified, try common executable extensions.
-    if path.extension().is_none() {
-        for ext in ["exe", "cmd", "bat", "com"] {
-            let candidate = path.with_extension(ext);
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
 }
 
 #[cfg(debug_assertions)]
@@ -2627,67 +2562,10 @@ fn debug_which_probe(bin: &str) {
 }
 
 fn find_on_path(bin: &str, path: &std::ffi::OsStr) -> Option<std::path::PathBuf> {
-    #[cfg(windows)]
-    let bin_path = std::path::Path::new(bin);
-
-    #[cfg(windows)]
-    let pathext: Vec<String> = std::env::var("PATHEXT")
-        .unwrap_or_else(|_| String::from(".COM;.EXE;.BAT;.CMD"))
-        .split(';')
-        .filter_map(|s| {
-            let s = s.trim();
-            if s.is_empty() {
-                None
-            } else {
-                Some(s.to_ascii_lowercase())
-            }
-        })
-        .collect();
-
     for dir in std::env::split_paths(path) {
-        // On Windows, when searching PATH, respect PATHEXT semantics.
-        // If the caller asked for `fzf` but `fzf.exe` exists in the directory,
-        // we should treat it as found.
-        #[cfg(windows)]
-        {
-            // If bin already has an extension, just check it directly.
-            if bin_path.extension().is_some() {
-                let p = dir.join(bin);
-                if p.exists() {
-                    return Some(p);
-                }
-            } else {
-                // Try PATHEXT entries first, in order.
-                // PATHEXT entries include the dot (e.g. ".EXE"), so we append directly.
-                for ext in &pathext {
-                    let p = dir.join(format!("{bin}{ext}"));
-                    if p.exists() {
-                        return Some(p);
-                    }
-                }
-
-                // Fallback to common executable extensions.
-                for ext in [".exe", ".cmd", ".bat", ".com"] {
-                    let p = dir.join(format!("{bin}{ext}"));
-                    if p.exists() {
-                        return Some(p);
-                    }
-                }
-
-                // Also check extensionless (rare, but keep behavior consistent)
-                let p = dir.join(bin);
-                if p.exists() {
-                    return Some(p);
-                }
-            }
-        }
-
-        #[cfg(not(windows))]
-        {
-            let p = dir.join(bin);
-            if p.exists() {
-                return Some(p);
-            }
+        let p = dir.join(bin);
+        if p.exists() {
+            return Some(p);
         }
     }
     None
@@ -4521,14 +4399,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let bin_dir = tmp.path().join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
-        #[cfg(windows)]
-        let bin = bin_dir.join("fzf.exe");
-        #[cfg(not(windows))]
         let bin = bin_dir.join("fzf");
-
-        #[cfg(windows)]
-        std::fs::write(&bin, "").unwrap();
-        #[cfg(not(windows))]
         std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
 
         #[cfg(unix)]
@@ -4545,15 +4416,6 @@ mod tests {
             std::env::set_var("PATH", &new_path);
         }
 
-        // Ensure PATHEXT contains .EXE so our Windows lookup is stable in CI.
-        // (GitHub Actions usually sets this, but tests should be deterministic.)
-        #[cfg(windows)]
-        let original_pathext = std::env::var_os("PATHEXT");
-        #[cfg(windows)]
-        unsafe {
-            std::env::set_var("PATHEXT", ".EXE;.COM;.BAT;.CMD");
-        }
-
         // Regression: ensure a plain name like "fzf" does NOT get treated as a path.
         let found = which("fzf");
         assert_eq!(found.as_ref(), Some(&bin));
@@ -4563,15 +4425,6 @@ mod tests {
                 std::env::set_var("PATH", path);
             } else {
                 std::env::remove_var("PATH");
-            }
-
-            #[cfg(windows)]
-            {
-                if let Some(pathext) = original_pathext {
-                    std::env::set_var("PATHEXT", pathext);
-                } else {
-                    std::env::remove_var("PATHEXT");
-                }
             }
         }
     }
@@ -4641,16 +4494,12 @@ mod tests {
     fn config_path_prefers_home_env() {
         let tmp = TempDir::new().unwrap();
         let fake_home = tmp.path().join("home");
-        let fake_profile = tmp.path().join("profile");
         std::fs::create_dir_all(&fake_home).unwrap();
-        std::fs::create_dir_all(&fake_profile).unwrap();
 
         let original_home = std::env::var_os("HOME");
-        let original_profile = std::env::var_os("USERPROFILE");
 
         unsafe {
             std::env::set_var("HOME", &fake_home);
-            std::env::set_var("USERPROFILE", &fake_profile);
         }
 
         let resolved = config_path().unwrap();
@@ -4661,11 +4510,6 @@ mod tests {
                 std::env::set_var("HOME", home);
             } else {
                 std::env::remove_var("HOME");
-            }
-            if let Some(profile) = original_profile {
-                std::env::set_var("USERPROFILE", profile);
-            } else {
-                std::env::remove_var("USERPROFILE");
             }
         }
     }
