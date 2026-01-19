@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/mgd43b/shelldbhist/compare/v0.13.0...v0.14.0) (2026-01-19)
+
+
+### Features
+
+* implement complete garbage detection system with CLI and config ([291ff2b](https://github.com/mgd43b/shelldbhist/commit/291ff2b0f495a0a8af56cf37e3c4ed24b07f4ef4))
+
 ## [0.13.0](https://github.com/mgd43b/shelldbhist/compare/v0.12.0...v0.13.0) (2026-01-17)
 
 
