@@ -18,7 +18,12 @@ pub struct DbConfig {
 
 impl DbConfig {
     pub fn default_path() -> PathBuf {
-        // Simple portable default (matches product decision)
+        // Check SDBH_DB environment variable first
+        if let Ok(db_path) = std::env::var("SDBH_DB") {
+            return PathBuf::from(db_path);
+        }
+
+        // Fall back to ~/.sdbh.sqlite
         let home = std::env::var_os("HOME").unwrap_or_default();
         PathBuf::from(home).join(".sdbh.sqlite")
     }
@@ -86,13 +91,41 @@ mod tests {
     fn test_db_config_default_path() {
         // Test with HOME set
         unsafe { env::set_var("HOME", "/home/testuser") };
+        unsafe { env::remove_var("SDBH_DB") };
         let path = DbConfig::default_path();
         assert_eq!(path, PathBuf::from("/home/testuser/.sdbh.sqlite"));
 
         // Test with HOME unset (should use empty string)
         unsafe { env::remove_var("HOME") };
+        unsafe { env::remove_var("SDBH_DB") };
         let path = DbConfig::default_path();
         assert_eq!(path, PathBuf::from(".sdbh.sqlite"));
+    }
+
+    #[test]
+    fn test_db_config_sdbh_db_override() {
+        // Test that SDBH_DB takes precedence over HOME
+        unsafe { env::set_var("HOME", "/home/testuser") };
+        unsafe { env::set_var("SDBH_DB", "/tmp/custom-demo.sqlite") };
+
+        let path = DbConfig::default_path();
+        assert_eq!(path, PathBuf::from("/tmp/custom-demo.sqlite"));
+
+        // Clean up
+        unsafe { env::remove_var("SDBH_DB") };
+    }
+
+    #[test]
+    fn test_db_config_sdbh_db_relative_path() {
+        // Test that SDBH_DB works with relative paths
+        unsafe { env::set_var("HOME", "/home/testuser") };
+        unsafe { env::set_var("SDBH_DB", "demo/test.sqlite") };
+
+        let path = DbConfig::default_path();
+        assert_eq!(path, PathBuf::from("demo/test.sqlite"));
+
+        // Clean up
+        unsafe { env::remove_var("SDBH_DB") };
     }
 
     #[test]

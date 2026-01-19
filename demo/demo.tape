@@ -13,15 +13,7 @@ Set TypingSpeed 50ms
 Set PlaybackSpeed 1.0
 
 # Set demo database environment variable (VHS command)
-Env SDBH_DB /tmp/demo-sdbh.sqlite
-
-# Show the environment being set (for demo purposes)
-Type "export SDBH_DB=/tmp/demo-sdbh.sqlite"
-Enter
-Sleep 500ms
-Type "clear"
-Enter
-Sleep 500ms
+Env SDBH_DB "/tmp/demo-sdbh.sqlite"
 
 # Title
 Type "# sdbh - Shell Database History"

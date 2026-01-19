@@ -24,9 +24,25 @@ vhs demo/demo.tape       # Record the GIF
 
 1. **`create-demo.sh`** creates a clean demo database at `/tmp/demo-sdbh.sqlite`
 2. Adds sample commands (git, cargo, npm, make, curl, python, etc.)
-3. Sets `SDBH_DB=/tmp/demo-sdbh.sqlite` environment variable
-4. Commands in the demo use clean syntax without `--db` flags
-5. VHS records the terminal session and outputs `demo.gif`
+3. **VHS sets `SDBH_DB=/tmp/demo-sdbh.sqlite`** environment variable (invisible to viewers)
+4. **sdbh automatically reads `SDBH_DB`** - no need for `--db` flags!
+5. Commands in the demo use clean syntax: `sdbh search build --all`
+6. VHS records the terminal session and outputs `demo.gif`
+
+### Environment Variable Magic
+
+The demo uses the `SDBH_DB` environment variable for database isolation:
+
+- **VHS tape sets it invisibly**: `Env SDBH_DB "/tmp/demo-sdbh.sqlite"` in `demo.tape`
+- **sdbh reads it automatically**: All commands use the demo database without extra flags
+- **Result**: Clean command syntax perfect for demos and screenshots
+- **Your personal history stays private**: The demo never touches `~/.sdbh.sqlite`
+
+This same technique works for:
+- Recording tutorials without exposing personal history
+- Testing with isolated databases
+- Running CI/CD pipelines with separate test databases
+- Creating reproducible demo environments
 
 ## Requirements
 

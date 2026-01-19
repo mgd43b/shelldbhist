@@ -104,10 +104,32 @@ sdbh list --all --limit 20
 ## Database
 Default DB path: `~/.sdbh.sqlite`
 
-Override per command:
+### Override database location
+
+You can override the database location in two ways:
+
+**1. Environment variable (recommended for demos/testing):**
+```bash
+# Set for current session
+export SDBH_DB=/tmp/demo-sdbh.sqlite
+sdbh list --all
+
+# Or set for a single command
+SDBH_DB=/tmp/demo-sdbh.sqlite sdbh search build --all
+```
+
+**2. Command-line flag:**
 ```bash
 sdbh --db /path/to/file.sqlite list --all
 ```
+
+The `SDBH_DB` environment variable is particularly useful for:
+- Recording clean demos without exposing personal history
+- Testing with isolated databases
+- Running multiple sdbh instances with separate histories
+- CI/CD pipelines requiring separate test databases
+
+**Priority order:** `--db` flag > `SDBH_DB` environment variable > `~/.sdbh.sqlite` (default)
 
 ## Configuration
 
