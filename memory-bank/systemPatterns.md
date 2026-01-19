@@ -8,7 +8,16 @@
   2) **Intercept mode** (more invasive): shell widget/plugin wraps command execution to capture richer context (e.g., preexec-like) then calls `sdbh log`.
 
 ## Data storage
-- Default DB: `~/.sdbh.sqlite` (override via `--db`).
+- **Database path resolution** (priority order):
+  1. `--db <path>` flag - explicit per-command override (highest priority)
+  2. `SDBH_DB` environment variable - session/process-level override
+  3. `~/.sdbh.sqlite` - default location for normal use
+- **Path types**: Supports both absolute and relative paths for all resolution methods
+- **Use cases for overrides**:
+  - Demos: Use isolated database to avoid exposing personal history
+  - Testing: Create temporary test databases without affecting main history
+  - CI/CD: Use project-specific or ephemeral databases
+  - Multiple instances: Maintain separate databases for different contexts
 - Base table compatible with dbhist:
   `history(id, hist_id, cmd, epoch, ppid, pwd, salt)`
 - Additional tables for robustness:

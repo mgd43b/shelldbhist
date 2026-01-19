@@ -1818,6 +1818,26 @@ fn cmd_import_history(cfg: DbConfig, args: ImportHistoryArgs) -> Result<()> {
 fn cmd_doctor(cfg: DbConfig, args: DoctorArgs) -> Result<()> {
     let mut checks: Vec<DoctorCheck> = vec![];
 
+    // --- fzf check ---
+    // We use fzf for interactive selection (`--fzf`). Check if it's available.
+    // Respect config override if set (fzf.binary_path), otherwise look for `fzf` on PATH.
+    let fzf_config = load_fzf_config();
+    let fzf_binary = fzf_config.binary_path.as_deref().unwrap_or("fzf");
+    if let Some(path) = which(fzf_binary) {
+        checks.push(DoctorCheck::ok(
+            "fzf",
+            format!("found: {}", path.to_string_lossy()),
+        ));
+    } else {
+        checks.push(DoctorCheck::info(
+            "fzf",
+            format!(
+                "not found (install fzf to use --fzf; looked for '{}')",
+                fzf_binary
+            ),
+        ));
+    }
+
     // --- DB check ---
     let db_path = cfg.path.clone();
     let db_display = db_path.to_string_lossy().to_string();
@@ -3438,6 +3458,32 @@ fn escape_like(s: &str) -> String {
         .replace('_', "\\_")
 }
 
+/// Extract the command portion from an fzf-formatted line.
+/// Handles multiple fzf output formats:
+/// - List/Search: "cmd  (timestamp) [pwd]"
+/// - Summary: "cmd [pwd]  (count uses, last: timestamp)"
+/// - Stats: "cmd  (count uses)"
+#[cfg(test)]
+fn extract_command_from_fzf_line(line: &str) -> String {
+    let line = line.trim();
+
+    // Try to find the first occurrence of "  (" which separates command from metadata
+    if let Some(pos) = line.find("  (") {
+        // Extract everything before "  ("
+        let cmd_part = &line[..pos];
+
+        // If there's a " [" (pwd in summary format), remove it
+        if let Some(bracket_pos) = cmd_part.find(" [") {
+            cmd_part[..bracket_pos].trim().to_string()
+        } else {
+            cmd_part.trim().to_string()
+        }
+    } else {
+        // Fallback: return the whole line if no metadata markers found
+        line.to_string()
+    }
+}
+
 fn json_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
@@ -3494,7 +3540,11 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
     build_fzf_command(&mut fzf_cmd, &fzf_config);
 
     // Override defaults with our specific settings
-    fzf_cmd.arg("--preview").arg("sdbh preview --command {{}}");
+    // Extract command from fzf line format before passing to preview
+    // Format: "cmd  (timestamp) [pwd]" -> extract "cmd"
+    fzf_cmd
+        .arg("--preview")
+        .arg(r#"echo {} | awk -F '  \\(' '{print $1}' | xargs sdbh preview"#);
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -3587,7 +3637,10 @@ fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
     build_fzf_command(&mut fzf_cmd, &fzf_config);
 
     // Override defaults with our specific settings
-    fzf_cmd.arg("--preview").arg("sdbh preview --command {{}}");
+    // Extract command from fzf line format before passing to preview
+    fzf_cmd
+        .arg("--preview")
+        .arg(r#"echo {} | awk -F '  \\(' '{print $1}' | xargs sdbh preview"#);
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -3697,7 +3750,10 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
     build_fzf_command(&mut fzf_cmd, &fzf_config);
 
     // Override defaults with our specific settings
-    fzf_cmd.arg("--preview").arg("sdbh preview --command {{}}");
+    // Extract command from fzf line format before passing to preview
+    fzf_cmd
+        .arg("--preview")
+        .arg(r#"echo {} | awk -F '  \\(' '{print $1}' | xargs sdbh preview"#);
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -3799,7 +3855,10 @@ fn cmd_stats_top_fzf(cfg: DbConfig, args: StatsTopArgs) -> Result<()> {
     build_fzf_command(&mut fzf_cmd, &fzf_config);
 
     // Override defaults with our specific settings
-    fzf_cmd.arg("--preview").arg("sdbh preview --command {{}}");
+    // Extract command from fzf line format before passing to preview
+    fzf_cmd
+        .arg("--preview")
+        .arg(r#"echo {} | awk -F '  \\(' '{print $1}' | xargs sdbh preview"#);
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -3896,7 +3955,10 @@ fn cmd_stats_by_pwd_fzf(cfg: DbConfig, args: StatsByPwdArgs) -> Result<()> {
     build_fzf_command(&mut fzf_cmd, &fzf_config);
 
     // Override defaults with our specific settings
-    fzf_cmd.arg("--preview").arg("sdbh preview --command {{}}");
+    // Extract command from fzf line format before passing to preview
+    fzf_cmd
+        .arg("--preview")
+        .arg(r#"echo {} | awk -F '  \\(' '{print $1}' | xargs sdbh preview"#);
 
     // Enable multi-select if requested
     if args.multi_select {
