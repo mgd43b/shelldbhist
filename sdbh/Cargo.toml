@@ -1,6 +1,6 @@
 [package]
 name = "sdbh"
-version = "0.14.2"
+version = "1.0.0"
 edition = "2024"
 repository = "https://github.com/mgd43b/shelldbhist"
 license = "MIT"

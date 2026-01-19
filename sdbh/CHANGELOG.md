@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0](https://github.com/mgd43b/shelldbhist/compare/v0.14.2...v1.0.0) (2026-01-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* Windows is no longer supported.
+
+### Features
+
+* drop Windows support ([#65](https://github.com/mgd43b/shelldbhist/issues/65)) ([8362030](https://github.com/mgd43b/shelldbhist/commit/8362030013bceee608b027bbd7894a2d35214e41))
+
+
+### Bug Fixes
+
+* detect fzf on PATH in doctor ([#63](https://github.com/mgd43b/shelldbhist/issues/63)) ([ebb38fc](https://github.com/mgd43b/shelldbhist/commit/ebb38fc889dbb4819449e7f73ccffac102b06e27))
+
 ## [0.14.2](https://github.com/mgd43b/shelldbhist/compare/v0.14.1...v0.14.2) (2026-01-19)
 
 
