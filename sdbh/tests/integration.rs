@@ -1909,7 +1909,12 @@ fn doctor_reports_fzf_found_when_configured_binary_path_exists() {
     // Create a fake fzf binary.
     let fake_bin_dir = home.join("bin");
     std::fs::create_dir_all(&fake_bin_dir).unwrap();
-    let fake_fzf = fake_bin_dir.join("fzf");
+    // Use an .exe extension on Windows so the binary can be located reliably.
+    let fake_fzf = if cfg!(windows) {
+        fake_bin_dir.join("fzf.exe")
+    } else {
+        fake_bin_dir.join("fzf")
+    };
     std::fs::write(&fake_fzf, "#!/bin/sh\nexit 0\n").unwrap();
 
     // Make it executable (unix only). On non-unix, just rely on exists().
