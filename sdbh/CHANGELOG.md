@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.2](https://github.com/mgd43b/shelldbhist/compare/v0.14.1...v0.14.2) (2026-01-19)
+
+
+### Bug Fixes
+
+* make which() respect absolute paths ([#61](https://github.com/mgd43b/shelldbhist/issues/61)) ([76b70e8](https://github.com/mgd43b/shelldbhist/commit/76b70e89830eccdfede17d7373c821897c2cb2e1))
+
 ## [0.14.1](https://github.com/mgd43b/shelldbhist/compare/v0.14.0...v0.14.1) (2026-01-19)
 
 
