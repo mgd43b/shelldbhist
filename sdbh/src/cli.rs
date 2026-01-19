@@ -1818,6 +1818,26 @@ fn cmd_import_history(cfg: DbConfig, args: ImportHistoryArgs) -> Result<()> {
 fn cmd_doctor(cfg: DbConfig, args: DoctorArgs) -> Result<()> {
     let mut checks: Vec<DoctorCheck> = vec![];
 
+    // --- fzf check ---
+    // We use fzf for interactive selection (`--fzf`). Check if it's available.
+    // Respect config override if set (fzf.binary_path), otherwise look for `fzf` on PATH.
+    let fzf_config = load_fzf_config();
+    let fzf_binary = fzf_config.binary_path.as_deref().unwrap_or("fzf");
+    if let Some(path) = which(fzf_binary) {
+        checks.push(DoctorCheck::ok(
+            "fzf",
+            format!("found: {}", path.to_string_lossy()),
+        ));
+    } else {
+        checks.push(DoctorCheck::info(
+            "fzf",
+            format!(
+                "not found (install fzf to use --fzf; looked for '{}')",
+                fzf_binary
+            ),
+        ));
+    }
+
     // --- DB check ---
     let db_path = cfg.path.clone();
     let db_display = db_path.to_string_lossy().to_string();

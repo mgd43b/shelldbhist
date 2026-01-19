@@ -1881,6 +1881,68 @@ fn doctor_reports_missing_env_vars_when_not_set() {
 }
 
 #[test]
+fn doctor_reports_fzf_missing_when_not_on_path() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // Remove PATH to simulate that fzf (and other binaries) are not available.
+    // We also use --no-spawn to avoid shell inspection that depends on bash/zsh.
+    sdbh_cmd()
+        .env_remove("PATH")
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "doctor",
+            "--no-spawn",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fzf").and(predicate::str::contains("not found")));
+}
+
+#[test]
+fn doctor_reports_fzf_found_when_configured_binary_path_exists() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path();
+    let db = home.join("test.sqlite");
+
+    // Create a fake fzf binary.
+    let fake_bin_dir = home.join("bin");
+    std::fs::create_dir_all(&fake_bin_dir).unwrap();
+    let fake_fzf = fake_bin_dir.join("fzf");
+    std::fs::write(&fake_fzf, "#!/bin/sh\nexit 0\n").unwrap();
+
+    // Make it executable (unix only). On non-unix, just rely on exists().
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&fake_fzf).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_fzf, perms).unwrap();
+    }
+
+    // Point config at the fake fzf path.
+    std::fs::write(
+        home.join(".sdbh.toml"),
+        format!("[fzf]\nbinary_path = \"{}\"\n", fake_fzf.to_string_lossy()),
+    )
+    .unwrap();
+
+    // Use --no-spawn to avoid bash/zsh checks; ensure HOME is set so config loads.
+    sdbh_cmd()
+        .env("HOME", home)
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "doctor",
+            "--no-spawn",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fzf").and(predicate::str::contains("found:")));
+}
+
+#[test]
 fn doctor_detects_hook_via_prompt_command_env() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("test.sqlite");
