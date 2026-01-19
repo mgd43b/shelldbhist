@@ -193,7 +193,7 @@ mod tests {
         "#;
 
         let variable: Variable = toml::from_str(toml_str).unwrap();
-        assert_eq!(variable.required, true); // Should default to true
+        assert!(variable.required); // Should default to true
     }
 
     #[test]
@@ -222,6 +222,6 @@ mod tests {
         };
 
         // Test Debug formatting (implicitly tested by assert)
-        assert_eq!(format!("{:?}", row).len() > 0, true);
+        assert!(!format!("{:?}", row).is_empty());
     }
 }

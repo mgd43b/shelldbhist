@@ -436,7 +436,7 @@ mod tests {
         // Scan for garbage
         let candidates = scan_garbage_candidates(&conn, None).unwrap();
 
-        assert!(candidates.len() >= 1, "Expected at least 1 candidate");
+        assert!(!candidates.is_empty(), "Expected at least 1 candidate");
 
         let binary_candidate = candidates
             .iter()
@@ -500,8 +500,8 @@ mod tests {
         // Test with 50.0 threshold to catch high-scoring items
         let high_conf = scan_garbage_candidates(&conn, Some(50.0)).unwrap();
         assert!(
-            high_conf.len() >= 1,
-            "Should find at least binary with score >= 50"
+            !high_conf.is_empty(),
+            "Expected at least 1 high confidence candidate"
         );
         assert!(high_conf.iter().all(|c| c.confidence_score >= 50.0));
 
@@ -566,7 +566,7 @@ mod tests {
         };
         let mut conn = open_db(&cfg).unwrap();
 
-        let legitimate = vec![
+        let legitimate = [
             "git status",
             "ls -la /home/user",
             "SELECT * FROM users WHERE id > 100",
@@ -603,7 +603,7 @@ mod tests {
         let large_cmd = "x".repeat(11000);
         let repetitive_cmd = "abc".repeat(600);
 
-        let garbage = vec![
+        let garbage = [
             "\x7fELF\x02\x01\x01binary",
             "command\0with\0nulls",
             large_cmd.as_str(),

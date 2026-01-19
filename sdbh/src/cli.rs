@@ -2487,14 +2487,14 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
     }
 
     // If `bin` looks like a path (e.g. configured via fzf.binary_path), respect it.
-    // This matters on Windows where users may configure `C:\...\fzf.exe`, but also
+    // This matters on Windows where users may configure `C:\\...\\fzf.exe`, but also
     // supports relative paths like `./fzf` or `bin/fzf`.
     let bin_path = std::path::Path::new(bin);
     // NOTE: we only treat `bin` as a user-specified *path* if it is absolute or explicitly relative
     // (contains a path separator). A plain name like "fzf" should be searched on PATH.
     if bin_path.is_absolute() {
         // On Windows, also respect PATHEXT-like behavior for configured path-like values.
-        // Users may configure `C:\...\fzf` while the actual file is `C:\...\fzf.exe`.
+        // Users may configure `C:\\...\\fzf` while the actual file is `C:\\...\\fzf.exe`.
         #[cfg(windows)]
         {
             if bin_path.exists() {
@@ -2548,10 +2548,15 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
 
     #[cfg(windows)]
     {
-        // On Windows, treat values with a parent component (e.g. "bin\\fzf") as explicit paths.
-        if bin_path.parent().is_some() {
+        // On Windows, treat values with a non-empty parent component (e.g. "bin\\fzf") as
+        // explicit paths.
+        //
+        // NOTE: Path::parent() is *always* Some() for relative paths like "fzf" on Windows
+        // (it returns an empty parent). We only want to treat this as explicit when the
+        // parent is non-empty (i.e., the input actually contains path separators).
+        if bin_path.parent().is_some_and(|p| !p.as_os_str().is_empty()) {
             // On Windows, also respect PATHEXT-like behavior for configured path-like values.
-            // Users may configure `C:\...\fzf` while the actual file is `C:\...\fzf.exe`.
+            // Users may configure `C:\\...\\fzf` while the actual file is `C:\\...\\fzf.exe`.
             if bin_path.exists() {
                 return Some(bin_path.to_path_buf());
             }
@@ -3643,6 +3648,7 @@ fn escape_like(s: &str) -> String {
 /// - Summary: "cmd [pwd]  (count uses, last: timestamp)"
 /// - Stats: "cmd  (count uses)"
 #[cfg(test)]
+#[allow(dead_code)]
 fn extract_command_from_fzf_line(line: &str) -> String {
     let line = line.trim();
 
@@ -4668,7 +4674,7 @@ mod tests {
         let (sql, bind) = build_stats_top_sql(&args).unwrap();
         assert!(sql.contains("GROUP BY cmd"));
         assert!(sql.contains("ORDER BY cnt DESC"));
-        assert!(bind.len() > 0);
+        assert!(!bind.is_empty());
     }
 
     #[test]
@@ -4684,7 +4690,7 @@ mod tests {
         let (sql, bind) = build_stats_by_pwd_sql(&args).unwrap();
         assert!(sql.contains("GROUP BY pwd, cmd"));
         assert!(sql.contains("ORDER BY cnt DESC"));
-        assert!(bind.len() > 0);
+        assert!(!bind.is_empty());
     }
 
     #[test]
@@ -4699,6 +4705,6 @@ mod tests {
         let (sql, bind) = build_stats_daily_sql(&args).unwrap();
         assert!(sql.contains("GROUP BY day"));
         assert!(sql.contains("ORDER BY day ASC"));
-        assert!(bind.len() > 0);
+        assert!(!bind.is_empty());
     }
 }
