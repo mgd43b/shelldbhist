@@ -1828,6 +1828,8 @@ fn cmd_doctor(cfg: DbConfig, args: DoctorArgs) -> Result<()> {
     // Respect config override if set (fzf.binary_path), otherwise look for `fzf` on PATH.
     let fzf_config = load_fzf_config();
     let fzf_binary = fzf_config.binary_path.as_deref().unwrap_or("fzf");
+    #[cfg(debug_assertions)]
+    debug_which_probe(fzf_binary);
     if let Some(path) = which(fzf_binary) {
         checks.push(DoctorCheck::ok(
             "fzf",
@@ -2479,11 +2481,18 @@ fn output_doctor(checks: &[DoctorCheck], format: OutputFormat) {
 }
 
 fn which(bin: &str) -> Option<std::path::PathBuf> {
+    #[cfg(debug_assertions)]
+    if std::env::var("SDBH_DEBUG_WHICH").ok().as_deref() == Some("1") {
+        eprintln!("[sdbh][debug] which() enter bin={bin:?}");
+    }
+
     // If `bin` looks like a path (e.g. configured via fzf.binary_path), respect it.
     // This matters on Windows where users may configure `C:\...\fzf.exe`, but also
     // supports relative paths like `./fzf` or `bin/fzf`.
     let bin_path = std::path::Path::new(bin);
-    if bin_path.is_absolute() || bin_path.parent().is_some() {
+    // NOTE: we only treat `bin` as a user-specified *path* if it is absolute or explicitly relative
+    // (contains a path separator). A plain name like "fzf" should be searched on PATH.
+    if bin_path.is_absolute() {
         // On Windows, also respect PATHEXT-like behavior for configured path-like values.
         // Users may configure `C:\...\fzf` while the actual file is `C:\...\fzf.exe`.
         #[cfg(windows)]
@@ -2507,12 +2516,107 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
 
         #[cfg(not(windows))]
         {
-            return bin_path.exists().then(|| bin_path.to_path_buf());
+            let out = bin_path.exists().then(|| bin_path.to_path_buf());
+            #[cfg(debug_assertions)]
+            if std::env::var("SDBH_DEBUG_WHICH").ok().as_deref() == Some("1") {
+                eprintln!(
+                    "[sdbh][debug] which() path-like input: exists={} => {:?}",
+                    bin_path.exists(),
+                    out.as_ref().map(|p| p.to_string_lossy())
+                );
+            }
+            return out;
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        // Explicit relative path (e.g. "./fzf" or "bin/fzf")
+        if bin.contains(std::path::MAIN_SEPARATOR) {
+            let out = bin_path.exists().then(|| bin_path.to_path_buf());
+            #[cfg(debug_assertions)]
+            if std::env::var("SDBH_DEBUG_WHICH").ok().as_deref() == Some("1") {
+                eprintln!(
+                    "[sdbh][debug] which() explicit relative path: exists={} => {:?}",
+                    bin_path.exists(),
+                    out.as_ref().map(|p| p.to_string_lossy())
+                );
+            }
+            return out;
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        // On Windows, treat values with a parent component (e.g. "bin\\fzf") as explicit paths.
+        if bin_path.parent().is_some() {
+            // On Windows, also respect PATHEXT-like behavior for configured path-like values.
+            // Users may configure `C:\...\fzf` while the actual file is `C:\...\fzf.exe`.
+            if bin_path.exists() {
+                return Some(bin_path.to_path_buf());
+            }
+
+            // If no extension was specified, try common executable extensions.
+            if bin_path.extension().is_none() {
+                for ext in ["exe", "cmd", "bat", "com"] {
+                    let candidate = bin_path.with_extension(ext);
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
+            }
+
+            return None;
         }
     }
 
     let path = std::env::var_os("PATH")?;
-    find_on_path(bin, &path)
+    let out = find_on_path(bin, &path);
+    #[cfg(debug_assertions)]
+    if std::env::var("SDBH_DEBUG_WHICH").ok().as_deref() == Some("1") {
+        eprintln!(
+            "[sdbh][debug] which() PATH-search => {:?}",
+            out.as_ref().map(|p| p.to_string_lossy())
+        );
+    }
+    out
+}
+
+#[cfg(debug_assertions)]
+#[allow(dead_code)]
+fn debug_which_probe(bin: &str) {
+    if std::env::var("SDBH_DEBUG_WHICH").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    eprintln!("[sdbh][debug] which({bin:?})");
+    match std::env::var_os("PATH") {
+        Some(path) => {
+            eprintln!("[sdbh][debug] PATH={}", path.to_string_lossy());
+            for (i, dir) in std::env::split_paths(&path).enumerate() {
+                if i < 10 {
+                    eprintln!("[sdbh][debug]  path[{i}]={}", dir.to_string_lossy());
+                } else if i == 10 {
+                    eprintln!("[sdbh][debug]  ... (remaining PATH entries omitted)");
+                }
+
+                let p = dir.join(bin);
+                if p.exists() {
+                    eprintln!(
+                        "[sdbh][debug]  FOUND via exists(): {} (is_file={}, is_symlink={})",
+                        p.to_string_lossy(),
+                        p.is_file(),
+                        p.symlink_metadata()
+                            .map(|m| m.file_type().is_symlink())
+                            .unwrap_or(false)
+                    );
+                    return;
+                }
+            }
+            eprintln!("[sdbh][debug]  NOT FOUND after scanning PATH entries");
+        }
+        None => eprintln!("[sdbh][debug] PATH is not set"),
+    }
 }
 
 fn find_on_path(bin: &str, path: &std::ffi::OsStr) -> Option<std::path::PathBuf> {
@@ -4380,6 +4484,41 @@ fn create_template_interactive(engine: &crate::template::TemplateEngine, name: &
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn which_plain_name_searches_path() {
+        let tmp = TempDir::new().unwrap();
+        let bin_dir = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let bin = bin_dir.join("fzf");
+        std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&bin, perms).unwrap();
+        }
+
+        let original_path = std::env::var_os("PATH");
+        let new_path = std::env::join_paths([bin_dir.clone()]).unwrap();
+        unsafe {
+            std::env::set_var("PATH", &new_path);
+        }
+
+        // Regression: ensure a plain name like "fzf" does NOT get treated as a path.
+        let found = which("fzf");
+        assert_eq!(found.as_ref(), Some(&bin));
+
+        unsafe {
+            if let Some(path) = original_path {
+                std::env::set_var("PATH", path);
+            } else {
+                std::env::remove_var("PATH");
+            }
+        }
+    }
 
     #[test]
     fn escape_like_escapes_wildcards() {
