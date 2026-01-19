@@ -437,3 +437,11 @@ memory-bank/
 # macOS
 .DS_Store
 .idea/
+
+# Demo recording artifacts (can be regenerated)
+demo.tape
+*.cast
+DEMO_RECORDING_GUIDE.md
+
+# Keep demo.gif (committed for README display)
+!demo.gif
