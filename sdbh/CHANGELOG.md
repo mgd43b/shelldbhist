@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/mgd43b/shelldbhist/compare/v0.14.0...v0.14.1) (2026-01-19)
+
+
+### Bug Fixes
+
+* add SDBH_DB environment variable support for database path override ([03b048b](https://github.com/mgd43b/shelldbhist/commit/03b048bb9632e8628b75c458c5c428e0c11e3823))
+
 ## [0.14.0](https://github.com/mgd43b/shelldbhist/compare/v0.13.0...v0.14.0) (2026-01-19)
 
 
