@@ -3443,6 +3443,7 @@ fn escape_like(s: &str) -> String {
 /// - List/Search: "cmd  (timestamp) [pwd]"
 /// - Summary: "cmd [pwd]  (count uses, last: timestamp)"
 /// - Stats: "cmd  (count uses)"
+#[cfg(test)]
 fn extract_command_from_fzf_line(line: &str) -> String {
     let line = line.trim();
 
