@@ -1909,7 +1909,14 @@ fn doctor_reports_fzf_found_when_configured_binary_path_exists() {
     // Create a fake fzf binary.
     let fake_bin_dir = home.join("bin");
     std::fs::create_dir_all(&fake_bin_dir).unwrap();
-    let fake_fzf = fake_bin_dir.join("fzf");
+    // Use an .exe extension on Windows so the binary can be located reliably,
+    // and configure the binary_path without the extension to ensure our
+    // PATH resolution respects Windows PATHEXT behavior.
+    let fake_fzf = if cfg!(windows) {
+        fake_bin_dir.join("fzf.exe")
+    } else {
+        fake_bin_dir.join("fzf")
+    };
     std::fs::write(&fake_fzf, "#!/bin/sh\nexit 0\n").unwrap();
 
     // Make it executable (unix only). On non-unix, just rely on exists().
@@ -1922,15 +1929,30 @@ fn doctor_reports_fzf_found_when_configured_binary_path_exists() {
     }
 
     // Point config at the fake fzf path.
+    // On Windows, intentionally omit the `.exe` extension to validate that `which()`
+    // respects PATHEXT when searching PATH.
+    let configured_fzf = if cfg!(windows) {
+        fake_fzf.with_extension("")
+    } else {
+        fake_fzf.clone()
+    };
+    let configured_fzf_str = configured_fzf.to_string_lossy();
+    // Use a TOML literal string to avoid backslash escaping issues on Windows.
+    let configured_fzf_toml = configured_fzf_str.replace('"', "\"");
     std::fs::write(
         home.join(".sdbh.toml"),
-        format!("[fzf]\nbinary_path = \"{}\"\n", fake_fzf.to_string_lossy()),
+        format!("[fzf]\nbinary_path = '{}'\n", configured_fzf_toml),
     )
     .unwrap();
 
-    // Use --no-spawn to avoid bash/zsh checks; ensure HOME is set so config loads.
+    // Use --no-spawn to avoid bash/zsh checks; ensure the config file is found.
+    // CI note: Pass `home` directly (as &Path) to env() rather than converting to string.
+    // This matches the pattern in other passing config tests and ensures assert_cmd
+    // properly handles the path on Windows.
     sdbh_cmd()
         .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("PATH", fake_bin_dir.to_string_lossy().as_ref())
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
