@@ -2479,7 +2479,31 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
     // supports relative paths like `./fzf` or `bin/fzf`.
     let bin_path = std::path::Path::new(bin);
     if bin_path.is_absolute() || bin_path.parent().is_some() {
-        return bin_path.exists().then(|| bin_path.to_path_buf());
+        // On Windows, also respect PATHEXT-like behavior for configured path-like values.
+        // Users may configure `C:\...\fzf` while the actual file is `C:\...\fzf.exe`.
+        #[cfg(windows)]
+        {
+            if bin_path.exists() {
+                return Some(bin_path.to_path_buf());
+            }
+
+            // If no extension was specified, try common executable extensions.
+            if bin_path.extension().is_none() {
+                for ext in ["exe", "cmd", "bat", "com"] {
+                    let candidate = bin_path.with_extension(ext);
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
+            }
+
+            return None;
+        }
+
+        #[cfg(not(windows))]
+        {
+            return bin_path.exists().then(|| bin_path.to_path_buf());
+        }
     }
 
     let path = std::env::var_os("PATH")?;
