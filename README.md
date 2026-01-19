@@ -9,8 +9,6 @@
 Shell DB History (`sdbh`) stores your shell command history in a local SQLite database.
 It's inspired by `dbhist.sh`, but implemented as a portable Rust CLI backed by SQLite.
 
-![sdbh demo](demo.gif)
-
 ## Features
 - 🔍 **Interactive fuzzy search** with `--fzf` flag for intelligent command selection
 - 📊 **Rich preview panes** showing command statistics and usage patterns
