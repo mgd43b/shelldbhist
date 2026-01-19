@@ -2501,14 +2501,8 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
                 return Some(bin_path.to_path_buf());
             }
 
-            // If no extension was specified, try common executable extensions.
-            if bin_path.extension().is_none() {
-                for ext in ["exe", "cmd", "bat", "com"] {
-                    let candidate = bin_path.with_extension(ext);
-                    if candidate.exists() {
-                        return Some(candidate);
-                    }
-                }
+            if let Some(found) = try_windows_executable_extensions(bin_path) {
+                return Some(found);
             }
 
             return None;
@@ -2561,14 +2555,8 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
                 return Some(bin_path.to_path_buf());
             }
 
-            // If no extension was specified, try common executable extensions.
-            if bin_path.extension().is_none() {
-                for ext in ["exe", "cmd", "bat", "com"] {
-                    let candidate = bin_path.with_extension(ext);
-                    if candidate.exists() {
-                        return Some(candidate);
-                    }
-                }
+            if let Some(found) = try_windows_executable_extensions(bin_path) {
+                return Some(found);
             }
 
             return None;
@@ -2585,6 +2573,20 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
         );
     }
     out
+}
+
+#[cfg(windows)]
+fn try_windows_executable_extensions(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    // If no extension was specified, try common executable extensions.
+    if path.extension().is_none() {
+        for ext in ["exe", "cmd", "bat", "com"] {
+            let candidate = path.with_extension(ext);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(debug_assertions)]
