@@ -1945,10 +1945,16 @@ fn doctor_reports_fzf_found_when_configured_binary_path_exists() {
     )
     .unwrap();
 
-    // Use --no-spawn to avoid bash/zsh checks; ensure HOME is set so config loads.
-    sdbh_cmd()
-        .env("HOME", home)
-        .env("PATH", fake_bin_dir.to_string_lossy().as_ref())
+    // Use --no-spawn to avoid bash/zsh checks; ensure the config file is found.
+    // On Windows GitHub Actions, HOME may not be honored by userdir resolution
+    // unless USERPROFILE is also set.
+    let mut cmd = sdbh_cmd();
+    cmd.env("HOME", home)
+        .env("PATH", fake_bin_dir.to_string_lossy().as_ref());
+    if cfg!(windows) {
+        cmd.env("USERPROFILE", home);
+    }
+    cmd.env("PATH", fake_bin_dir.to_string_lossy().as_ref())
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
