@@ -67,6 +67,68 @@ The "Version Sync Guard" workflow ensures tag versions match source code version
 - Check that `.release-please-manifest.json["sdbh"]` matches the tag.
 - Fix version mismatches before creating tags manually.
 
+## Updating the Homebrew Tap
+
+After releasing a new version, you need to update the Homebrew tap formula so users can install the latest version via Homebrew.
+
+### Automated Method (Recommended)
+
+Use the `scripts/update-tap.sh` script to automate the entire process:
+
+```bash
+# Update to the latest version (e.g., 0.14.0)
+./scripts/update-tap.sh 0.14.0
+
+# Preview changes without committing (dry run)
+./scripts/update-tap.sh 0.14.0 --dry-run
+
+# Skip local testing (faster, but less safe)
+./scripts/update-tap.sh 0.14.0 --skip-test
+```
+
+**What the script does:**
+1. Validates the version format (X.Y.Z)
+2. Checks that the GitHub release exists
+3. Downloads the tarball and calculates SHA256 hash
+4. Updates the tap repository's Formula/sdbh.rb
+5. Tests the formula locally (unless `--skip-test`)
+6. Commits and pushes to `homebrew-taps` repository
+
+**Requirements:**
+- The GitHub release must be published first (via release-please workflow)
+- You must have the tap installed locally: `brew tap mgd43b/taps`
+- The tap repository must be accessible at `/opt/homebrew/Library/Taps/mgd43b/homebrew-taps`
+
+### Manual Method
+
+If you prefer to update the formula manually:
+
+```bash
+# 1. Get the new version's tarball URL and download it
+VERSION="0.14.0"
+URL="https://github.com/mgd43b/shelldbhist/archive/refs/tags/v${VERSION}.tar.gz"
+curl -L "$URL" -o "/tmp/sdbh-${VERSION}.tar.gz"
+
+# 2. Calculate the SHA256 hash
+shasum -a 256 "/tmp/sdbh-${VERSION}.tar.gz"
+
+# 3. Update Formula/sdbh.rb in the tap repository
+cd /opt/homebrew/Library/Taps/mgd43b/homebrew-taps
+# Edit Formula/sdbh.rb:
+#   - Update url to point to the new version
+#   - Update sha256 with the calculated hash
+
+# 4. Test locally
+brew uninstall sdbh
+brew install --build-from-source sdbh
+sdbh --version  # Should show the new version
+
+# 5. Commit and push
+git add Formula/sdbh.rb
+git commit -m "chore: bump sdbh to v${VERSION}"
+git push origin main
+```
+
 ## Recent Changes (January 2026)
 
 **Workflow reliability improvements:**
@@ -74,6 +136,11 @@ The "Version Sync Guard" workflow ensures tag versions match source code version
 - The Release workflow now triggers reliably on tag push events only
 - Simplified tag resolution logic (removed 100+ lines of complex bash)
 - Added clearer error messages and debugging output
+
+**Homebrew tap automation:**
+- Added `scripts/update-tap.sh` to automate formula updates
+- Created GitHub repository at `mgd43b/homebrew-taps`
+- Fixed missing git remote and duplicate tap conflicts
 
 **Why this matters:**
 The previous setup tried to trigger cargo-dist immediately after release-please completed, but this created a race condition where the tag might not be visible yet via the GitHub API. This caused intermittent failures where releases would be created but have no binary assets attached. The new approach is simpler and more reliable - it waits for the tag to actually exist before building.
