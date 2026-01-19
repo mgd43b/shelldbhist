@@ -2474,6 +2474,13 @@ fn output_doctor(checks: &[DoctorCheck], format: OutputFormat) {
 }
 
 fn which(bin: &str) -> Option<std::path::PathBuf> {
+    // If `bin` is already a path (e.g. configured via fzf.binary_path), respect it.
+    // This matters on Windows where users may configure an absolute `C:\...\fzf.exe`.
+    let bin_path = std::path::Path::new(bin);
+    if bin_path.is_absolute() {
+        return bin_path.exists().then(|| bin_path.to_path_buf());
+    }
+
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         let p = dir.join(bin);
