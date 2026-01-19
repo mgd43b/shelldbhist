@@ -1946,18 +1946,13 @@ fn doctor_reports_fzf_found_when_configured_binary_path_exists() {
     .unwrap();
 
     // Use --no-spawn to avoid bash/zsh checks; ensure the config file is found.
-    // CI note: `config_path()` checks HOME/USERPROFILE; `dirs::home_dir()` consults
-    // additional vars on Windows, so we set both HOME and USERPROFILE.
-    // Also remove any ambient SDBH_* vars so behavior is deterministic.
-    let home_str = home.to_string_lossy();
-    let mut cmd = sdbh_cmd();
-    cmd.env("HOME", home_str.as_ref())
-        .env("USERPROFILE", home_str.as_ref())
+    // CI note: Pass `home` directly (as &Path) to env() rather than converting to string.
+    // This matches the pattern in other passing config tests and ensures assert_cmd
+    // properly handles the path on Windows.
+    sdbh_cmd()
+        .env("HOME", home)
+        .env("USERPROFILE", home)
         .env("PATH", fake_bin_dir.to_string_lossy().as_ref())
-        .env_remove("SDBH_HOME")
-        .env_remove("SDBH_CONFIG")
-        .env_remove("SDBH_SALT")
-        .env_remove("SDBH_PPID")
         .args([
             "--db",
             db.to_string_lossy().as_ref(),
