@@ -1936,12 +1936,12 @@ fn doctor_reports_fzf_found_when_configured_binary_path_exists() {
     } else {
         fake_fzf.clone()
     };
+    let configured_fzf_str = configured_fzf.to_string_lossy();
+    // Use a TOML literal string to avoid backslash escaping issues on Windows.
+    let configured_fzf_toml = configured_fzf_str.replace('"', "\"");
     std::fs::write(
         home.join(".sdbh.toml"),
-        format!(
-            "[fzf]\nbinary_path = \"{}\"\n",
-            configured_fzf.to_string_lossy()
-        ),
+        format!("[fzf]\nbinary_path = '{}'\n", configured_fzf_toml),
     )
     .unwrap();
 
