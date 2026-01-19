@@ -1,4 +1,6 @@
-use crate::cleanup::{analyze_command_for_garbage, analyze_command_for_garbage_with_config, score_to_confidence_level, GarbageCandidate};
+use crate::cleanup::{
+    GarbageCandidate, analyze_command_for_garbage_with_config, score_to_confidence_level,
+};
 use crate::config::CleanupConfig;
 use crate::domain::{DbConfig, HistoryRow};
 use anyhow::{Context, Result};
@@ -367,10 +369,10 @@ pub fn scan_garbage_candidates_with_config(
         let (confidence_score, reasons) = analyze_command_for_garbage_with_config(&cmd, config);
 
         // Apply minimum score filter if specified
-        if let Some(min) = min_score {
-            if confidence_score < min {
-                continue;
-            }
+        if let Some(min) = min_score
+            && confidence_score < min
+        {
+            continue;
         }
 
         // Only include if score is above 0 (has some indication of garbage)
@@ -402,8 +404,10 @@ mod tests {
     fn test_scan_garbage_finds_binary_content() {
         let tmp = TempDir::new().unwrap();
         let db_path = tmp.path().join("test.db");
-        
-        let cfg = DbConfig { path: db_path.clone() };
+
+        let cfg = DbConfig {
+            path: db_path.clone(),
+        };
         let mut conn = open_db(&cfg).unwrap();
 
         // Insert normal command
@@ -431,20 +435,30 @@ mod tests {
 
         // Scan for garbage
         let candidates = scan_garbage_candidates(&conn, None).unwrap();
-        
+
         assert!(candidates.len() >= 1, "Expected at least 1 candidate");
-        
-        let binary_candidate = candidates.iter().find(|c| c.cmd.contains("ELF")).expect("Should find binary");
+
+        let binary_candidate = candidates
+            .iter()
+            .find(|c| c.cmd.contains("ELF"))
+            .expect("Should find binary");
         assert!(binary_candidate.confidence_score >= 50.0);
-        assert!(binary_candidate.reasons.iter().any(|r| r.contains("Binary file magic")));
+        assert!(
+            binary_candidate
+                .reasons
+                .iter()
+                .any(|r| r.contains("Binary file magic"))
+        );
     }
 
     #[test]
     fn test_scan_garbage_respects_min_score() {
         let tmp = TempDir::new().unwrap();
         let db_path = tmp.path().join("test.db");
-        
-        let cfg = DbConfig { path: db_path.clone() };
+
+        let cfg = DbConfig {
+            path: db_path.clone(),
+        };
         let mut conn = open_db(&cfg).unwrap();
 
         // Insert commands with different scores
@@ -485,7 +499,10 @@ mod tests {
         // Binary magic alone gives 50 points, which is moderate confidence
         // Test with 50.0 threshold to catch high-scoring items
         let high_conf = scan_garbage_candidates(&conn, Some(50.0)).unwrap();
-        assert!(high_conf.len() >= 1, "Should find at least binary with score >= 50");
+        assert!(
+            high_conf.len() >= 1,
+            "Should find at least binary with score >= 50"
+        );
         assert!(high_conf.iter().all(|c| c.confidence_score >= 50.0));
 
         let moderate_conf = scan_garbage_candidates(&conn, Some(30.0)).unwrap();
@@ -497,8 +514,10 @@ mod tests {
     fn test_scan_garbage_returns_complete_metadata() {
         let tmp = TempDir::new().unwrap();
         let db_path = tmp.path().join("test.db");
-        
-        let cfg = DbConfig { path: db_path.clone() };
+
+        let cfg = DbConfig {
+            path: db_path.clone(),
+        };
         let mut conn = open_db(&cfg).unwrap();
 
         let binary_cmd = "\x7fELFbinary";
@@ -529,7 +548,7 @@ mod tests {
     fn test_scan_garbage_empty_database() {
         let tmp = TempDir::new().unwrap();
         let db_path = tmp.path().join("test.db");
-        
+
         let cfg = DbConfig { path: db_path };
         let conn = open_db(&cfg).unwrap();
 
@@ -541,8 +560,10 @@ mod tests {
     fn test_scan_garbage_skips_legitimate_commands() {
         let tmp = TempDir::new().unwrap();
         let db_path = tmp.path().join("test.db");
-        
-        let cfg = DbConfig { path: db_path.clone() };
+
+        let cfg = DbConfig {
+            path: db_path.clone(),
+        };
         let mut conn = open_db(&cfg).unwrap();
 
         let legitimate = vec![
@@ -572,14 +593,16 @@ mod tests {
     fn test_scan_garbage_identifies_various_types() {
         let tmp = TempDir::new().unwrap();
         let db_path = tmp.path().join("test.db");
-        
-        let cfg = DbConfig { path: db_path.clone() };
+
+        let cfg = DbConfig {
+            path: db_path.clone(),
+        };
         let mut conn = open_db(&cfg).unwrap();
 
         // Create strings that need to live long enough
         let large_cmd = "x".repeat(11000);
         let repetitive_cmd = "abc".repeat(600);
-        
+
         let garbage = vec![
             "\x7fELF\x02\x01\x01binary",
             "command\0with\0nulls",
@@ -602,10 +625,18 @@ mod tests {
         let candidates = scan_garbage_candidates(&conn, Some(30.0)).unwrap();
         assert!(candidates.len() >= 4);
 
-        let has_binary = candidates.iter().any(|c| c.reasons.iter().any(|r| r.contains("Binary")));
-        let has_null = candidates.iter().any(|c| c.reasons.iter().any(|r| r.contains("Null bytes")));
-        let has_large = candidates.iter().any(|c| c.reasons.iter().any(|r| r.contains("Very large")));
-        let has_repetitive = candidates.iter().any(|c| c.reasons.iter().any(|r| r.contains("Repetitive")));
+        let has_binary = candidates
+            .iter()
+            .any(|c| c.reasons.iter().any(|r| r.contains("Binary")));
+        let has_null = candidates
+            .iter()
+            .any(|c| c.reasons.iter().any(|r| r.contains("Null bytes")));
+        let has_large = candidates
+            .iter()
+            .any(|c| c.reasons.iter().any(|r| r.contains("Very large")));
+        let has_repetitive = candidates
+            .iter()
+            .any(|c| c.reasons.iter().any(|r| r.contains("Repetitive")));
 
         assert!(has_binary);
         assert!(has_null);

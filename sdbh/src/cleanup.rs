@@ -13,6 +13,7 @@ pub struct GarbageCandidate {
     pub cmd: String,
     pub epoch: i64,
     pub pwd: String,
+    #[allow(dead_code)]
     pub size_bytes: usize,
     pub confidence_score: f32,
     pub confidence_level: ConfidenceLevel,
@@ -23,9 +24,10 @@ use crate::config::CleanupConfig;
 
 /// Analyze a command to determine if it's likely garbage
 /// Returns (confidence_score, reasons)
-/// 
+///
 /// If a config is provided, commands matching the allow-list will return (0.0, vec![])
 /// and custom size thresholds will be used.
+#[allow(dead_code)]
 pub fn analyze_command_for_garbage(cmd: &str) -> (f32, Vec<String>) {
     analyze_command_for_garbage_with_config(cmd, &CleanupConfig::default())
 }
@@ -67,12 +69,12 @@ pub fn analyze_command_for_garbage_with_config(
 
     // Pattern-based detection (check before size scoring to inform decisions)
     let has_repetition = has_repeated_patterns(cmd);
-    
+
     // Size-based scoring (conservative) - use configurable thresholds
     if size > config.size_threshold_large {
         // >large threshold (default 10KB) - but be lenient with legitimate patterns
         if has_legitimate_patterns(cmd) {
-            score += 15.0;  // Reduced score for large legitimate commands
+            score += 15.0; // Reduced score for large legitimate commands
             reasons.push(format!("Very large command ({}KB)", size / 1024));
         } else {
             score += 30.0;
@@ -103,11 +105,14 @@ pub fn analyze_command_for_garbage_with_config(
     if has_excessive_newlines(cmd) && !has_heredoc_or_script(cmd) {
         score += 15.0;
         let newline_count = cmd.matches('\n').count();
-        reasons.push(format!("Excessive newlines ({}) without shell syntax", newline_count));
+        reasons.push(format!(
+            "Excessive newlines ({}) without shell syntax",
+            newline_count
+        ));
     }
 
     // Clamp score to 0-100 range
-    score = score.min(100.0).max(0.0);
+    score = score.clamp(0.0, 100.0);
 
     (score, reasons)
 }
@@ -179,8 +184,7 @@ fn calculate_non_printable_ratio(cmd: &str) -> f32 {
         .filter(|c| {
             // Consider printable: ASCII printable + common whitespace + Unicode
             let ch = *c as u32;
-            !(ch >= 32 && ch <= 126) // ASCII printable range
-                && !matches!(ch, 9 | 10 | 13) // tab, newline, carriage return
+            !(matches!(ch, 9 | 10 | 13) || (32..=126).contains(&ch)) // tab, newline, carriage return or ASCII printable range
                 && ch < 128 // Exclude extended Unicode (might be legitimate)
         })
         .count();
@@ -218,7 +222,7 @@ fn has_legitimate_patterns(cmd: &str) -> bool {
     if cmd.starts_with("curl") && (cmd.contains("-d ") || cmd.contains("--data")) {
         return true;
     }
-    
+
     // curl with @ file reference
     if cmd.starts_with("curl") && cmd.contains("-d @") {
         return true;
@@ -308,10 +312,7 @@ fn has_heredoc_or_script(cmd: &str) -> bool {
     }
 
     // Common scripting keywords
-    if cmd.contains("#!/bin/bash")
-        || cmd.contains("#!/bin/sh")
-        || cmd.contains("#!/usr/bin/env")
-    {
+    if cmd.contains("#!/bin/bash") || cmd.contains("#!/bin/sh") || cmd.contains("#!/usr/bin/env") {
         return true;
     }
 
@@ -367,8 +368,12 @@ mod tests {
 
         // Test small threshold (101 bytes should be scored)
         let cmd_small = "x".repeat(101);
-        let (score_small, reasons_small) = analyze_command_for_garbage_with_config(&cmd_small, &config);
-        assert!(score_small > 0.0, "Command exceeding small threshold should be scored");
+        let (score_small, reasons_small) =
+            analyze_command_for_garbage_with_config(&cmd_small, &config);
+        assert!(
+            score_small > 0.0,
+            "Command exceeding small threshold should be scored"
+        );
         assert!(
             reasons_small.iter().any(|r| r.contains("Medium-sized")),
             "Should mention medium size"
@@ -376,8 +381,12 @@ mod tests {
 
         // Test medium threshold (201 bytes)
         let cmd_medium = "y".repeat(201);
-        let (score_medium, reasons_medium) = analyze_command_for_garbage_with_config(&cmd_medium, &config);
-        assert!(score_medium > score_small, "Medium command should score higher");
+        let (score_medium, reasons_medium) =
+            analyze_command_for_garbage_with_config(&cmd_medium, &config);
+        assert!(
+            score_medium > score_small,
+            "Medium command should score higher"
+        );
         assert!(
             reasons_medium.iter().any(|r| r.contains("Large command")),
             "Should mention large size"
@@ -385,10 +394,16 @@ mod tests {
 
         // Test large threshold (301 bytes)
         let cmd_large = "z".repeat(301);
-        let (score_large, reasons_large) = analyze_command_for_garbage_with_config(&cmd_large, &config);
-        assert!(score_large > score_medium, "Large command should score higher");
+        let (score_large, reasons_large) =
+            analyze_command_for_garbage_with_config(&cmd_large, &config);
         assert!(
-            reasons_large.iter().any(|r| r.contains("Very large command")),
+            score_large > score_medium,
+            "Large command should score higher"
+        );
+        assert!(
+            reasons_large
+                .iter()
+                .any(|r| r.contains("Very large command")),
             "Should mention very large size"
         );
     }
@@ -398,10 +413,13 @@ mod tests {
         // Calling without config should use defaults
         let cmd = "x".repeat(501);
         let (score_new, reasons_new) = analyze_command_for_garbage(&cmd);
-        let (score_config, reasons_config) = 
+        let (score_config, reasons_config) =
             analyze_command_for_garbage_with_config(&cmd, &CleanupConfig::default());
-        
-        assert_eq!(score_new, score_config, "Default function should match default config");
+
+        assert_eq!(
+            score_new, score_config,
+            "Default function should match default config"
+        );
         assert_eq!(reasons_new, reasons_config);
     }
 
@@ -420,8 +438,16 @@ mod tests {
         let cmd = String::from_utf8_lossy(bytes);
         let (score, reasons) = analyze_command_for_garbage(&cmd);
         // PNG detection might not work after lossy conversion, but null bytes should be detected
-        assert!(score >= 40.0, "PNG binary should have moderate-high confidence (score: {})", score);
-        assert!(reasons.iter().any(|r| r.contains("Null bytes") || r.contains("Binary file magic")));
+        assert!(
+            score >= 40.0,
+            "PNG binary should have moderate-high confidence (score: {})",
+            score
+        );
+        assert!(
+            reasons
+                .iter()
+                .any(|r| r.contains("Null bytes") || r.contains("Binary file magic"))
+        );
     }
 
     #[test]
@@ -445,7 +471,10 @@ mod tests {
     fn test_large_valid_sql_query() {
         let sql = format!(
             "SELECT * FROM users WHERE id IN ({}) ORDER BY created_at DESC",
-            (1..=500).map(|i| i.to_string()).collect::<Vec<_>>().join(", ")
+            (1..=500)
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
         let (score, _reasons) = analyze_command_for_garbage(&sql);
         assert!(
@@ -460,11 +489,17 @@ mod tests {
         let json_data = format!(
             r#"{{"users": [{}]}}"#,
             (1..=200)
-                .map(|i| format!(r#"{{"id": {}, "name": "User {}", "email": "user{}@example.com"}}"#, i, i, i))
+                .map(|i| format!(
+                    r#"{{"id": {}, "name": "User {}", "email": "user{}@example.com"}}"#,
+                    i, i, i
+                ))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        let cmd = format!("curl -X POST https://api.example.com/users -H 'Content-Type: application/json' -d '{}'", json_data);
+        let cmd = format!(
+            "curl -X POST https://api.example.com/users -H 'Content-Type: application/json' -d '{}'",
+            json_data
+        );
         let (score, _reasons) = analyze_command_for_garbage(&cmd);
         // Legitimate curl with large data gets moderate score (30) but not high confidence
         assert!(
@@ -549,7 +584,11 @@ EOF"#;
         // Exactly 2048 bytes without legitimate patterns
         let cmd = "x".repeat(2048);
         let (score, reasons) = analyze_command_for_garbage(&cmd);
-        assert!(score >= 30.0, "2KB garbage should be moderate confidence (score: {})", score);
+        assert!(
+            score >= 30.0,
+            "2KB garbage should be moderate confidence (score: {})",
+            score
+        );
         assert!(
             reasons
                 .iter()
@@ -564,7 +603,11 @@ EOF"#;
         // Exactly 10240 bytes - one more than the threshold
         let cmd = "y".repeat(10241);
         let (score, reasons) = analyze_command_for_garbage(&cmd);
-        assert!(score >= 30.0, "10KB should have decent confidence (score: {})", score);
+        assert!(
+            score >= 30.0,
+            "10KB should have decent confidence (score: {})",
+            score
+        );
         assert!(
             reasons.iter().any(|r| r.contains("Very large command")),
             "Should have 'Very large command' reason: {:?}",
@@ -575,11 +618,11 @@ EOF"#;
     #[test]
     fn test_legitimate_large_curl_15kb() {
         // 15KB curl command with valid JSON
-        let large_json = format!(
-            r#"{{"data": "{}"}}"#,
-            "x".repeat(15000)
+        let large_json = format!(r#"{{"data": "{}"}}"#, "x".repeat(15000));
+        let cmd = format!(
+            "curl -X POST https://api.example.com/upload -d '{}'",
+            large_json
         );
-        let cmd = format!("curl -X POST https://api.example.com/upload -d '{}'", large_json);
         let (score, _reasons) = analyze_command_for_garbage(&cmd);
         // Large legitimate curl gets moderate score (size + maybe repetition), but not high
         assert!(

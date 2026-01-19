@@ -1,5 +1,5 @@
-mod cli;
 mod cleanup;
+mod cli;
 mod config;
 mod db;
 mod domain;

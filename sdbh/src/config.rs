@@ -59,6 +59,7 @@ impl CleanupConfig {
     }
 
     /// Validate that thresholds are in ascending order
+    #[allow(dead_code)]
     pub fn validate(&self) -> Result<()> {
         if self.size_threshold_small >= self.size_threshold_medium {
             anyhow::bail!(
@@ -79,6 +80,7 @@ impl CleanupConfig {
 }
 
 /// Application configuration (root config file structure)
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     #[serde(default)]
@@ -87,9 +89,10 @@ pub struct AppConfig {
 
 impl AppConfig {
     /// Load configuration from ~/.sdbh.toml
+    #[allow(dead_code)]
     pub fn load() -> Result<Self> {
         let path = Self::config_path();
-        
+
         if !path.exists() {
             // Return default config if file doesn't exist
             return Ok(Self::default());
@@ -102,28 +105,32 @@ impl AppConfig {
             .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
 
         // Validate cleanup config
-        config.cleanup.validate()
+        config
+            .cleanup
+            .validate()
             .with_context(|| "Invalid cleanup configuration")?;
 
         Ok(config)
     }
 
     /// Save configuration to ~/.sdbh.toml
+    #[allow(dead_code)]
     pub fn save(&self) -> Result<()> {
         // Validate before saving
-        self.cleanup.validate()
+        self.cleanup
+            .validate()
             .with_context(|| "Invalid cleanup configuration")?;
 
         let path = Self::config_path();
-        
+
         // Create parent directory if it doesn't exist
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create config directory: {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create config directory: {}", parent.display())
+            })?;
         }
 
-        let contents = toml::to_string_pretty(self)
-            .context("Failed to serialize config")?;
+        let contents = toml::to_string_pretty(self).context("Failed to serialize config")?;
 
         fs::write(&path, contents)
             .with_context(|| format!("Failed to write config file: {}", path.display()))?;
@@ -132,6 +139,7 @@ impl AppConfig {
     }
 
     /// Get the path to the config file (~/.sdbh.toml)
+    #[allow(dead_code)]
     pub fn config_path() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -140,7 +148,9 @@ impl AppConfig {
 }
 
 /// Simple pattern matching supporting * and ?
+///
 /// * matches any sequence of characters
+///
 /// ? matches any single character
 fn matches_pattern(text: &str, pattern: &str) -> bool {
     // Simple recursive implementation
@@ -150,7 +160,7 @@ fn matches_pattern(text: &str, pattern: &str) -> bool {
 fn matches_pattern_impl(text: &str, pattern: &str) -> bool {
     let text_chars: Vec<char> = text.chars().collect();
     let pattern_chars: Vec<char> = pattern.chars().collect();
-    
+
     matches_recursive(&text_chars, &pattern_chars, 0, 0)
 }
 
@@ -299,7 +309,10 @@ mod tests {
 
     #[test]
     fn test_pattern_matching_combined() {
-        assert!(matches_pattern("curl -X POST https://api.example.com", "curl *"));
+        assert!(matches_pattern(
+            "curl -X POST https://api.example.com",
+            "curl *"
+        ));
         assert!(matches_pattern("git commit -m 'test'", "git commit*"));
         assert!(matches_pattern("ls -la", "ls -??"));
         assert!(matches_pattern("mv file.txt backup.txt", "mv *.txt *.txt"));
@@ -339,7 +352,7 @@ mod tests {
         // Empty TOML should deserialize to defaults
         let toml_str = "";
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        
+
         assert_eq!(config.cleanup.allow_list.len(), 0);
         assert_eq!(config.cleanup.size_threshold_small, 500);
         assert_eq!(config.cleanup.size_threshold_medium, 2048);
@@ -355,7 +368,7 @@ allow_list = ["curl *", "wget *"]
 size_threshold_large = 50000
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        
+
         assert_eq!(config.cleanup.allow_list.len(), 2);
         assert_eq!(config.cleanup.size_threshold_small, 500); // default
         assert_eq!(config.cleanup.size_threshold_medium, 2048); // default
@@ -365,10 +378,10 @@ size_threshold_large = 50000
     #[test]
     fn test_app_config_save_and_load() {
         use tempfile::tempdir;
-        
+
         let temp_dir = tempdir().unwrap();
         let config_path = temp_dir.path().join(".sdbh.toml");
-        
+
         // Create a config with custom values
         let original_config = AppConfig {
             cleanup: CleanupConfig {
@@ -387,7 +400,10 @@ size_threshold_large = 50000
         let loaded_contents = fs::read_to_string(&config_path).unwrap();
         let loaded_config: AppConfig = toml::from_str(&loaded_contents).unwrap();
 
-        assert_eq!(loaded_config.cleanup.allow_list, original_config.cleanup.allow_list);
+        assert_eq!(
+            loaded_config.cleanup.allow_list,
+            original_config.cleanup.allow_list
+        );
         assert_eq!(
             loaded_config.cleanup.size_threshold_small,
             original_config.cleanup.size_threshold_small

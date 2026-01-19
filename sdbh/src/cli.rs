@@ -605,7 +605,7 @@ fn display_cleanup_candidates(
                     "{:?} ({:.0})",
                     candidate.confidence_level, candidate.confidence_score
                 );
-                
+
                 // Truncate command for display
                 let cmd_display = if candidate.cmd.len() > 60 {
                     format!("{}...", &candidate.cmd[..57])
@@ -617,7 +617,7 @@ fn display_cleanup_candidates(
                     "{:>6} | {} | {:>20} | {}",
                     candidate.id, dt, confidence, cmd_display
                 );
-                
+
                 // Show reasons indented
                 for reason in &candidate.reasons {
                     println!("       | {}", reason);
@@ -642,7 +642,7 @@ fn display_cleanup_candidates(
                     candidate.confidence_score,
                     candidate.confidence_level
                 );
-                
+
                 let mut first_reason = true;
                 for reason in &candidate.reasons {
                     if !first_reason {
@@ -673,7 +673,8 @@ fn perform_interactive_cleanup(
 
     for candidate in &candidates {
         println!("\nID: {}", candidate.id);
-        println!("Command: {}", 
+        println!(
+            "Command: {}",
             if candidate.cmd.len() > 200 {
                 format!("{}...", &candidate.cmd[..197])
             } else {
@@ -682,7 +683,10 @@ fn perform_interactive_cleanup(
         );
         println!("Date: {}", format_timestamp(candidate.epoch));
         println!("Directory: {}", candidate.pwd);
-        println!("Confidence: {:?} ({:.0})", candidate.confidence_level, candidate.confidence_score);
+        println!(
+            "Confidence: {:?} ({:.0})",
+            candidate.confidence_level, candidate.confidence_score
+        );
         println!("Reasons:");
         for reason in &candidate.reasons {
             println!("  • {}", reason);
@@ -705,7 +709,7 @@ fn perform_interactive_cleanup(
     }
 
     println!("\n{} entries selected for deletion.", to_delete.len());
-    
+
     let confirm = dialoguer::Confirm::new()
         .with_prompt("Proceed with deletion?")
         .default(false)
@@ -741,7 +745,10 @@ fn perform_auto_cleanup(
         return Ok(());
     }
 
-    println!("Auto cleanup mode: {} high-confidence entries identified", high_confidence.len());
+    println!(
+        "Auto cleanup mode: {} high-confidence entries identified",
+        high_confidence.len()
+    );
     println!("{}", "━".repeat(80));
 
     // Display what will be deleted
@@ -766,7 +773,7 @@ fn perform_auto_cleanup(
     let ids_to_delete: Vec<i64> = high_confidence.iter().map(|c| c.id).collect();
     let mut conn = open_db(&cfg)?;
     let deleted_ids = delete_history_by_ids(&mut conn, &ids_to_delete)?;
-    
+
     println!("✓ Successfully deleted {} entries", deleted_ids.len());
 
     Ok(())
