@@ -941,7 +941,7 @@ fn memory_bank_update() {
     // - stats command flag interactions (--all vs --limit)
     // All tests should be passing (71+ total)
 
-    assert!(true); // Always pass - this is for documentation
+    // Documentation placeholder: no assertion needed.
 }
 
 #[test]
@@ -1117,7 +1117,7 @@ fn fzf_multi_select_flag_parsing() {
 fn fzf_multi_select_configuration() {
     // Test that multi-select flag can be parsed
     // This is a compile-time test to ensure the flag exists
-    use clap::CommandFactory;
+    // use clap::CommandFactory; // unused
 
     // Test the binary directly rather than through crate path
     let output = sdbh_cmd().args(["list", "--help"]).output().unwrap();
@@ -1938,7 +1938,7 @@ fn doctor_reports_fzf_found_when_configured_binary_path_exists() {
     };
     let configured_fzf_str = configured_fzf.to_string_lossy();
     // Use a TOML literal string to avoid backslash escaping issues on Windows.
-    let configured_fzf_toml = configured_fzf_str.replace('"', "\"");
+    let configured_fzf_toml = configured_fzf_str.to_string();
     std::fs::write(
         home.join(".sdbh.toml"),
         format!("[fzf]\nbinary_path = '{}'\n", configured_fzf_toml),
@@ -2630,6 +2630,7 @@ fn very_long_command_handling() {
 
     // Create a very long command (10KB)
     let long_cmd = "echo ".repeat(1000) + "end";
+    let long_cmd = long_cmd.as_str();
 
     sdbh_cmd()
         .args([
@@ -2637,7 +2638,7 @@ fn very_long_command_handling() {
             db.to_string_lossy().as_ref(),
             "log",
             "--cmd",
-            &long_cmd,
+            long_cmd,
             "--epoch",
             "1700000000",
             "--ppid",
@@ -2680,7 +2681,7 @@ fn preview_with_very_long_command() {
             db.to_string_lossy().as_ref(),
             "log",
             "--cmd",
-            &long_cmd,
+            long_cmd,
             "--epoch",
             "1700000000",
             "--ppid",
@@ -2695,7 +2696,7 @@ fn preview_with_very_long_command() {
 
     // Preview should work with long commands
     sdbh_cmd()
-        .args(["--db", db.to_string_lossy().as_ref(), "preview", &long_cmd])
+        .args(["--db", db.to_string_lossy().as_ref(), "preview", long_cmd])
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -2877,7 +2878,7 @@ fn extreme_timestamp_values() {
     let db = tmp.path().join("test.sqlite");
 
     // Test with various timestamp edge cases
-    let timestamps = vec![
+    let timestamps = [
         "0",          // Unix epoch start
         "1",          // Just after epoch
         "2147483647", // Max 32-bit signed int
@@ -3432,7 +3433,7 @@ fn preview_enhanced_command_type_detection() {
         ("unknown_command", "💻 Generic"),
     ];
 
-    for (cmd, expected_type) in test_commands {
+    for (cmd, _expected_type) in test_commands {
         sdbh_cmd()
             .args([
                 "--db",
@@ -3476,7 +3477,7 @@ fn preview_enhanced_related_commands_by_directory() {
     let db = tmp.path().join("test.sqlite");
 
     // Add commands in the same directory to test directory-based related commands
-    let commands_in_same_dir = vec![
+    let commands_in_same_dir = [
         "git status",
         "make test",
         "cargo build",
@@ -4529,7 +4530,7 @@ fn template_category_filtering() {
     std::fs::create_dir_all(&templates_dir).unwrap();
 
     // Create templates with different categories
-    let categories = vec![
+    let _categories = [
         ("git-commit", "git", "git commit -m '{message}'"),
         ("git-status", "git", "git status"),
         ("docker-build", "docker", "docker build -t {tag} ."),
@@ -4723,7 +4724,7 @@ fn template_file_operations_error_handling() {
     let home = tmp.path();
 
     // Test operations on non-existent templates
-    let nonexistent_tests = vec![
+    let nonexistent_tests = [
         ("template", vec!["nonexistent-template"]),
         ("template", vec!["--delete", "missing-template"]),
     ];

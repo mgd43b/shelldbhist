@@ -1,4 +1,3 @@
-use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::NamedTempFile;
 
@@ -9,8 +8,7 @@ fn test_preview_with_positional_arg() {
     let db_path = db.path();
 
     // Initialize database with a test command
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("sdbh")
         .args(["--db", db_path.to_str().unwrap()])
         .args([
             "log",
@@ -29,8 +27,7 @@ fn test_preview_with_positional_arg() {
         .success();
 
     // Preview with positional argument should work
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("sdbh")
         .args(["--db", db_path.to_str().unwrap()])
         .args(["preview", "git status"])
         .assert()
@@ -45,8 +42,7 @@ fn test_preview_rejects_command_flag() {
     let db_path = db.path();
 
     // This should fail with "unexpected argument '--command'"
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("sdbh")
         .args(["--db", db_path.to_str().unwrap()])
         .args(["preview", "--command", "git status"])
         .assert()
@@ -124,8 +120,7 @@ fn test_fzf_requires_fzf_binary() {
     let db_path = db.path();
 
     // Add a test command
-    Command::cargo_bin("sdbh")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("sdbh")
         .args(["--db", db_path.to_str().unwrap()])
         .args([
             "log",
@@ -146,8 +141,7 @@ fn test_fzf_requires_fzf_binary() {
     // If fzf is not in PATH, should fail with clear error message
     // Note: This test may pass if fzf IS installed, which is fine
     // The important thing is it doesn't crash with the preview bug
-    let result = Command::cargo_bin("sdbh")
-        .unwrap()
+    let result = assert_cmd::cargo::cargo_bin_cmd!("sdbh")
         .args(["--db", db_path.to_str().unwrap()])
         .args(["list", "--fzf"])
         .env("PATH", "/nonexistent") // Ensure fzf won't be found
