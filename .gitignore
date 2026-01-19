@@ -439,9 +439,9 @@ memory-bank/
 .idea/
 
 # Demo recording artifacts (can be regenerated)
-demo.tape
 *.cast
-DEMO_RECORDING_GUIDE.md
 
-# Keep demo.gif (committed for README display)
+# Demo directory files are tracked in git (demo/*.sh, demo/*.tape, etc.)
+# But keep demo.gif in root (committed for README display)
 !demo.gif
+demo
