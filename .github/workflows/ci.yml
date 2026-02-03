@@ -83,11 +83,6 @@ jobs:
       - name: Comment on major updates
         if: steps.metadata.outputs.update-type == 'version-update:semver-major'
         run: |
-          gh pr comment "${{ github.event.pull_request.html_url }}" --body "  **Major version update detected** - requires manual review before merge.
-          
-          This update may contain breaking changes. Please:
-          1. Review the changelog/release notes
-          2. Verify CI passes
-          3. Manually approve and merge when ready"
+          gh pr comment "${{ github.event.pull_request.html_url }}" --body "Major version update detected - requires manual review before merge. This update may contain breaking changes. Please review the changelog/release notes, verify CI passes, and manually approve and merge when ready."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
