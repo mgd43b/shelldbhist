@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/mgd43b/shelldbhist/compare/v1.0.0...v1.0.1) (2026-02-03)
+
+
+### Bug Fixes
+
+* use xargs -I{} to pass multi-word commands to preview ([#69](https://github.com/mgd43b/shelldbhist/issues/69)) ([02a43f9](https://github.com/mgd43b/shelldbhist/commit/02a43f9896e0b09527c37cd9054c7d4bb055f104))
+
 ## [1.0.0](https://github.com/mgd43b/shelldbhist/compare/v0.14.2...v1.0.0) (2026-01-19)
 
 
