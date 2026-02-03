@@ -3632,7 +3632,7 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
     // Format: "cmd  (timestamp) [pwd]" -> extract "cmd"
     fzf_cmd
         .arg("--preview")
-        .arg(r#"echo {} | awk -F '  \\(' '{print $1}' | xargs -I{} sdbh preview {}"#);
+        .arg(r#"printf '%s\n' {} | awk -F '  \\(' '{print $1}' | xargs -I{} sdbh preview {}"#);
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -3728,7 +3728,7 @@ fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
     // Extract command from fzf line format before passing to preview
     fzf_cmd
         .arg("--preview")
-        .arg(r#"echo {} | awk -F '  \\(' '{print $1}' | xargs -I{} sdbh preview {}"#);
+        .arg(r#"printf '%s\n' {} | awk -F '  \\(' '{print $1}' | xargs -I{} sdbh preview {}"#);
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -3841,7 +3841,7 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
     // Extract command from fzf line format before passing to preview
     fzf_cmd
         .arg("--preview")
-        .arg(r#"echo {} | awk -F '  \\(' '{print $1}' | xargs -I{} sdbh preview {}"#);
+        .arg(r#"printf '%s\n' {} | awk -F '  \\(' '{print $1}' | xargs -I{} sdbh preview {}"#);
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -3946,7 +3946,7 @@ fn cmd_stats_top_fzf(cfg: DbConfig, args: StatsTopArgs) -> Result<()> {
     // Extract command from fzf line format before passing to preview
     fzf_cmd
         .arg("--preview")
-        .arg(r#"echo {} | awk -F '  \\(' '{print $1}' | xargs -I{} sdbh preview {}"#);
+        .arg(r#"printf '%s\n' {} | awk -F '  \\(' '{print $1}' | xargs -I{} sdbh preview {}"#);
 
     // Enable multi-select if requested
     if args.multi_select {
@@ -4046,7 +4046,7 @@ fn cmd_stats_by_pwd_fzf(cfg: DbConfig, args: StatsByPwdArgs) -> Result<()> {
     // Extract command from fzf line format before passing to preview
     fzf_cmd
         .arg("--preview")
-        .arg(r#"echo {} | awk -F '  \\(' '{print $1}' | xargs -I{} sdbh preview {}"#);
+        .arg(r#"printf '%s\n' {} | awk -F '  \\(' '{print $1}' | xargs -I{} sdbh preview {}"#);
 
     // Enable multi-select if requested
     if args.multi_select {
