@@ -1170,6 +1170,9 @@ fn build_fzf_command(base_cmd: &mut std::process::Command, fzf_config: &FzfConfi
     if !fzf_config.bind.iter().any(|b| b.contains("stderr")) {
         base_cmd.stderr(std::process::Stdio::null());
     }
+
+    // Disable mouse to allow terminal copy/paste (iTerm, etc.)
+    base_cmd.arg("--no-mouse");
 }
 
 fn is_builtin_noisy_command(cmd: &str) -> bool {
