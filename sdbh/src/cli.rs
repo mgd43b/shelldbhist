@@ -3481,6 +3481,7 @@ fn cmd_shell(args: ShellArgs) -> Result<()> {
 }
 
 fn bash_hook_snippet() -> String {
+    // Bash shell integration snippet for hook mode
     r#"# sdbh bash hook mode
 # Add to ~/.bashrc (and ensure HISTTIMEFORMAT="%s ")
 
