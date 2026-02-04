@@ -2064,6 +2064,31 @@ fn cmd_doctor(cfg: DbConfig, args: DoctorArgs) -> Result<()> {
                             "DEBUG trap missing __sdbh_debug_trap".to_string(),
                         ));
                     }
+
+                    // Check for Ctrl+R fzf integration
+                    if rep.fzf_function == "function" && !rep.fzf_binding.is_empty() {
+                        checks.push(DoctorCheck::ok(
+                            "bash.fzf.ctrlr",
+                            "Ctrl+R bound to sdbh-fzf-history".to_string(),
+                        ));
+                    } else if rep.fzf_function == "function" {
+                        checks.push(DoctorCheck::warn(
+                            "bash.fzf.ctrlr",
+                            "sdbh-fzf-history function exists but Ctrl+R not bound (add: bind -x '\"\\C-r\": sdbh-fzf-history')".to_string(),
+                        ));
+                    } else if !rep.fzf_binding.is_empty() {
+                        checks.push(DoctorCheck::warn(
+                            "bash.fzf.ctrlr",
+                            "Ctrl+R binding exists but sdbh-fzf-history function missing"
+                                .to_string(),
+                        ));
+                    } else {
+                        checks.push(DoctorCheck::info(
+                            "bash.fzf.ctrlr",
+                            "Ctrl+R fzf integration not configured (see docs/fzf-integration.md)"
+                                .to_string(),
+                        ));
+                    }
                 }
                 Err(e) => checks.push(DoctorCheck::warn(
                     "bash.spawn",
@@ -2575,14 +2600,18 @@ fn find_on_path(bin: &str, path: &std::ffi::OsStr) -> Option<std::path::PathBuf>
 struct BashInspect {
     prompt_command: String,
     trap_debug: String,
+    fzf_function: String,
+    fzf_binding: String,
 }
 
 impl BashInspect {
     fn summary(&self) -> String {
         format!(
-            "prompt_command_len={}, trap_debug_len={}",
+            "prompt_command_len={}, trap_debug_len={}, fzf_function_len={}, fzf_binding_len={}",
             self.prompt_command.len(),
-            self.trap_debug.len()
+            self.trap_debug.len(),
+            self.fzf_function.len(),
+            self.fzf_binding.len()
         )
     }
 }
@@ -2591,13 +2620,15 @@ fn spawn_bash_inspect(bash: &std::path::Path) -> Result<BashInspect> {
     let out = std::process::Command::new(bash)
         .args([
             "-lc",
-            "echo __SDBH_PROMPT_COMMAND__=$PROMPT_COMMAND; echo __SDBH_TRAP_DEBUG__=$(trap -p DEBUG)",
+            "echo __SDBH_PROMPT_COMMAND__=$PROMPT_COMMAND; echo __SDBH_TRAP_DEBUG__=$(trap -p DEBUG); echo __SDBH_FZF_FUNCTION__=$(type -t sdbh-fzf-history 2>/dev/null); echo __SDBH_FZF_BINDING__=$(bind -P | grep '\"\\\\C-r\"' | grep sdbh-fzf-history)",
         ])
         .output()?;
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let mut prompt_command = String::new();
     let mut trap_debug = String::new();
+    let mut fzf_function = String::new();
+    let mut fzf_binding = String::new();
 
     for line in stdout.lines() {
         if let Some(v) = line.strip_prefix("__SDBH_PROMPT_COMMAND__=") {
@@ -2606,11 +2637,19 @@ fn spawn_bash_inspect(bash: &std::path::Path) -> Result<BashInspect> {
         if let Some(v) = line.strip_prefix("__SDBH_TRAP_DEBUG__=") {
             trap_debug = v.to_string();
         }
+        if let Some(v) = line.strip_prefix("__SDBH_FZF_FUNCTION__=") {
+            fzf_function = v.to_string();
+        }
+        if let Some(v) = line.strip_prefix("__SDBH_FZF_BINDING__=") {
+            fzf_binding = v.to_string();
+        }
     }
 
     Ok(BashInspect {
         prompt_command,
         trap_debug,
+        fzf_function,
+        fzf_binding,
     })
 }
 
@@ -3677,9 +3716,13 @@ fn cmd_list_fzf(cfg: DbConfig, args: ListArgs) -> Result<()> {
         }
 
         // Extract command from the fzf format: "cmd  (timestamp) [pwd]"
+        // If pattern not found, output the whole line as fallback
         if let Some(cmd_end) = line.find("  (") {
             let cmd = &line[..cmd_end];
             println!("{}", cmd);
+        } else {
+            // Fallback: output the whole line if pattern not found
+            println!("{}", line);
         }
     }
 
@@ -3773,9 +3816,13 @@ fn cmd_search_fzf(cfg: DbConfig, args: SearchArgs) -> Result<()> {
         }
 
         // Extract command from the fzf format: "cmd  (timestamp) [pwd]"
+        // If pattern not found, output the whole line as fallback
         if let Some(cmd_end) = line.find("  (") {
             let cmd = &line[..cmd_end];
             println!("{}", cmd);
+        } else {
+            // Fallback: output the whole line if pattern not found
+            println!("{}", line);
         }
     }
 
@@ -3886,6 +3933,7 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
         }
 
         // Extract command from the fzf format: "cmd [pwd]  (count uses, last: timestamp)"
+        // If pattern not found, output the whole line as fallback
         if let Some(cmd_end) = line.find("  (") {
             let cmd_part = &line[..cmd_end];
             // Remove pwd part if present: "cmd [pwd]" -> "cmd"
@@ -3895,6 +3943,9 @@ fn cmd_summary_fzf(cfg: DbConfig, args: SummaryArgs) -> Result<()> {
                 cmd_part.trim()
             };
             println!("{}", cmd);
+        } else {
+            // Fallback: output the whole line if pattern not found
+            println!("{}", line);
         }
     }
 
@@ -3991,9 +4042,13 @@ fn cmd_stats_top_fzf(cfg: DbConfig, args: StatsTopArgs) -> Result<()> {
         }
 
         // Extract command from the fzf format: "cmd  (count uses)"
+        // If pattern not found, output the whole line as fallback
         if let Some(cmd_end) = line.find("  (") {
             let cmd = &line[..cmd_end];
             println!("{}", cmd);
+        } else {
+            // Fallback: output the whole line if pattern not found
+            println!("{}", line);
         }
     }
 
@@ -4091,9 +4146,13 @@ fn cmd_stats_by_pwd_fzf(cfg: DbConfig, args: StatsByPwdArgs) -> Result<()> {
         }
 
         // Extract command from the fzf format: "cmd  [pwd]  (count uses)"
+        // If pattern not found, output the whole line as fallback
         if let Some(cmd_end) = line.find("  [") {
             let cmd = &line[..cmd_end];
             println!("{}", cmd);
+        } else {
+            // Fallback: output the whole line if pattern not found
+            println!("{}", line);
         }
     }
 
@@ -4187,9 +4246,13 @@ fn cmd_stats_daily_fzf(cfg: DbConfig, args: StatsDailyArgs) -> Result<()> {
         }
 
         // Extract day from the fzf format: "day  (count commands)"
+        // If pattern not found, output the whole line as fallback
         if let Some(day_end) = line.find("  (") {
             let day = &line[..day_end];
             println!("{}", day);
+        } else {
+            // Fallback: output the whole line if pattern not found
+            println!("{}", line);
         }
     }
 
