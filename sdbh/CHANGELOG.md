@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/mgd43b/shelldbhist/compare/v1.0.1...v1.0.2) (2026-02-04)
+
+
+### Bug Fixes
+
+* fzf command extraction now outputs fallback when pattern not found ([#71](https://github.com/mgd43b/shelldbhist/issues/71)) ([9d054a5](https://github.com/mgd43b/shelldbhist/commit/9d054a5375fdcb21801ca6c5de5906d8fb399e9e))
+
 ## [1.0.1](https://github.com/mgd43b/shelldbhist/compare/v1.0.0...v1.0.1) (2026-02-03)
 
 
