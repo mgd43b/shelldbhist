@@ -1170,6 +1170,9 @@ fn build_fzf_command(base_cmd: &mut std::process::Command, fzf_config: &FzfConfi
     if !fzf_config.bind.iter().any(|b| b.contains("stderr")) {
         base_cmd.stderr(std::process::Stdio::null());
     }
+
+    // Disable mouse to allow terminal copy/paste (iTerm, etc.)
+    base_cmd.arg("--no-mouse");
 }
 
 fn is_builtin_noisy_command(cmd: &str) -> bool {
@@ -2067,14 +2070,23 @@ fn cmd_doctor(cfg: DbConfig, args: DoctorArgs) -> Result<()> {
 
                     // Check for Ctrl+R fzf integration
                     if rep.fzf_function == "function" && !rep.fzf_binding.is_empty() {
-                        checks.push(DoctorCheck::ok(
-                            "bash.fzf.ctrlr",
-                            "Ctrl+R bound to sdbh-fzf-history".to_string(),
-                        ));
+                        // Provide info if using bash 3.2 (macOS default)
+                        if rep.bash_version.starts_with("3.2") {
+                            checks.push(DoctorCheck::info(
+                                "bash.fzf.ctrlr",
+                                format!("Ctrl+R bound (bash {}). If using READLINE_LINE, switch to history -s + eval version (run 'sdbh shell --bash' for snippet)", rep.bash_version),
+                            ));
+                        } else {
+                            checks.push(DoctorCheck::ok(
+                                "bash.fzf.ctrlr",
+                                "Ctrl+R bound to sdbh-fzf-history".to_string(),
+                            ));
+                        }
                     } else if rep.fzf_function == "function" {
                         checks.push(DoctorCheck::warn(
                             "bash.fzf.ctrlr",
-                            "sdbh-fzf-history function exists but Ctrl+R not bound (add: bind -x '\"\\C-r\": sdbh-fzf-history')".to_string(),
+                            "sdbh-fzf-history function exists but Ctrl+R not bound (add: bind -x '\"\\C-r\": sdbh-fzf-history')"
+                                .to_string(),
                         ));
                     } else if !rep.fzf_binding.is_empty() {
                         checks.push(DoctorCheck::warn(
@@ -2602,12 +2614,14 @@ struct BashInspect {
     trap_debug: String,
     fzf_function: String,
     fzf_binding: String,
+    bash_version: String,
 }
 
 impl BashInspect {
     fn summary(&self) -> String {
         format!(
-            "prompt_command_len={}, trap_debug_len={}, fzf_function_len={}, fzf_binding_len={}",
+            "bash={}, prompt_command_len={}, trap_debug_len={}, fzf_function_len={}, fzf_binding_len={}",
+            self.bash_version,
             self.prompt_command.len(),
             self.trap_debug.len(),
             self.fzf_function.len(),
@@ -2620,17 +2634,21 @@ fn spawn_bash_inspect(bash: &std::path::Path) -> Result<BashInspect> {
     let out = std::process::Command::new(bash)
         .args([
             "-lc",
-            "echo __SDBH_PROMPT_COMMAND__=$PROMPT_COMMAND; echo __SDBH_TRAP_DEBUG__=$(trap -p DEBUG); echo __SDBH_FZF_FUNCTION__=$(type -t sdbh-fzf-history 2>/dev/null); echo __SDBH_FZF_BINDING__=$(bind -P | grep '\"\\\\C-r\"' | grep sdbh-fzf-history)",
+            "echo __SDBH_BASH_VERSION__=$BASH_VERSION; echo __SDBH_PROMPT_COMMAND__=$PROMPT_COMMAND; echo __SDBH_TRAP_DEBUG__=$(trap -p DEBUG); echo __SDBH_FZF_FUNCTION__=$(type -t sdbh-fzf-history 2>/dev/null); echo __SDBH_FZF_BINDING__=$(bind -P | grep '\"\\\\C-r\"' | grep sdbh-fzf-history)",
         ])
         .output()?;
 
     let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut bash_version = String::new();
     let mut prompt_command = String::new();
     let mut trap_debug = String::new();
     let mut fzf_function = String::new();
     let mut fzf_binding = String::new();
 
     for line in stdout.lines() {
+        if let Some(v) = line.strip_prefix("__SDBH_BASH_VERSION__=") {
+            bash_version = v.to_string();
+        }
         if let Some(v) = line.strip_prefix("__SDBH_PROMPT_COMMAND__=") {
             prompt_command = v.to_string();
         }
@@ -2650,6 +2668,7 @@ fn spawn_bash_inspect(bash: &std::path::Path) -> Result<BashInspect> {
         trap_debug,
         fzf_function,
         fzf_binding,
+        bash_version,
     })
 }
 

@@ -37,19 +37,35 @@ If you preview a bare command like `kubectl` (no subcommand), you should expect 
 
 **Important:** The Ctrl+R integration requires adding a shell function to your shell configuration file. This is **separate** from the shell logging integration (see [shell-integration.md](shell-integration.md)).
 
-### How it works
+### Bash 3.2 (macOS default) - Immediate Execution
 
-1. Press **Ctrl+R** in your terminal
-2. The **fzf** interface opens with your command history
-3. Type to **fuzzy search** through commands
-4. Use **arrow keys** or keep typing to select the command you want
-5. Press **Enter** to select
-6. The command **appears on your command line** (ready for you to edit or execute)
-7. Press **Enter again** to execute the command
+**Note:** Bash 3.2 (the default on macOS) cannot modify the readline buffer from `bind -x`, so selected commands execute immediately. This is a limitation of bash 3.2, not sdbh.
 
-The selected command is placed on your readline buffer - it does not execute automatically. This allows you to review and edit it before running.
+```bash
+sdbh-fzf-history() {
+  local selected
+  selected=$(sdbh list --all --fzf 2>/dev/null)
+  if [[ -n "$selected" ]]; then
+    history -s "$selected"  # Add to history for up-arrow access
+    echo "¶ $selected"       # Show what's executing
+    eval "$selected"         # Execute immediately
+  fi
+}
+bind -x '"\C-r": sdbh-fzf-history'
+```
 
-Bash:
+**UX Flow:**
+1. Press **Ctrl+R** ’ fzf opens with your history
+2. Type to **search**, use arrows to navigate
+3. Press **Enter** ’ command shows with `¶` prefix and executes immediately
+4. Command is in your bash history (up-arrow works)
+5. Command is logged to sdbh database via your `__sdbh_prompt` hook
+
+**Trade-off:** You cannot edit the command before execution. If you need to edit, press Ctrl+C in fzf and type the command manually.
+
+### Bash 4.0+ - Edit Before Execute
+
+If you're using bash 4.0 or later, you can use this version that places the command on your readline buffer for editing:
 
 ```bash
 sdbh-fzf-history() {
@@ -58,6 +74,8 @@ sdbh-fzf-history() {
 }
 bind -x '"\C-r": sdbh-fzf-history'
 ```
+
+**Note:** This does NOT work on bash 3.2 (macOS default). Use the immediate execution version above instead.
 
 Zsh:
 
