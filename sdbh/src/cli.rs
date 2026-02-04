@@ -2070,11 +2070,11 @@ fn cmd_doctor(cfg: DbConfig, args: DoctorArgs) -> Result<()> {
 
                     // Check for Ctrl+R fzf integration
                     if rep.fzf_function == "function" && !rep.fzf_binding.is_empty() {
-                        // Check if using bash 3.2 (macOS default)
+                        // Provide info if using bash 3.2 (macOS default)
                         if rep.bash_version.starts_with("3.2") {
-                            checks.push(DoctorCheck::warn(
+                            checks.push(DoctorCheck::info(
                                 "bash.fzf.ctrlr",
-                                format!("Ctrl+R bound but bash {} cannot modify readline (use immediate execution version - see docs/fzf-integration.md)", rep.bash_version),
+                                format!("Ctrl+R bound (bash {}). If using READLINE_LINE, switch to history -s + eval version (run 'sdbh shell --bash' for snippet)", rep.bash_version),
                             ));
                         } else {
                             checks.push(DoctorCheck::ok(
