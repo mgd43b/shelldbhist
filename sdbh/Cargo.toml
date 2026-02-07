@@ -6,7 +6,7 @@ repository = "https://github.com/mgd43b/shelldbhist"
 license = "MIT"
 
 [dependencies]
-anyhow = "1.0.100"
+anyhow = "1.0.101"
 clap = { version = "4.5.57", features = ["derive"] }
 # (Optional) used to resolve ~/.sdbh.toml robustly.
 dialoguer = "0.12.0"
