@@ -9,12 +9,15 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # Needed to dispatch the "Release" (dist) workflow after a release is cut.
+  actions: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
       - name: Run release-please
+        id: release
         uses: googleapis/release-please-action@v5
         with:
           # We have a single releasable unit: the sdbh crate.
@@ -24,3 +27,19 @@ jobs:
           # Tag format will be vX.Y.Z
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # release-please creates the tag with GITHUB_TOKEN, and GitHub does not
+      # trigger workflow runs from tag pushes made with GITHUB_TOKEN. So the
+      # `on: push: tags:` trigger in release.yml (dist) never fires and no
+      # artifacts get built. workflow_dispatch is the documented exception that
+      # DOES run even when invoked with GITHUB_TOKEN, so dispatch the Release
+      # workflow explicitly for the freshly created tag.
+      - name: Trigger dist Release workflow for the new tag
+        if: ${{ steps.release.outputs.releases_created == 'true' || steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ steps.release.outputs.tag_name || steps.release.outputs['sdbh--tag_name'] }}
+        run: |
+          echo "Dispatching Release workflow for tag: $TAG_NAME"
+          gh workflow run release.yml -f tag="$TAG_NAME"
