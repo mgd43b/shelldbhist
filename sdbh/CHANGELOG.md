@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/mgd43b/shelldbhist/compare/v1.0.3...v1.0.4) (2026-07-05)
+
+
+### Bug Fixes
+
+* exit quietly on SIGPIPE instead of panicking when stdout closes ([#126](https://github.com/mgd43b/shelldbhist/issues/126)) ([fe7d4ff](https://github.com/mgd43b/shelldbhist/commit/fe7d4ff25ca0ca5e05cbe4723b3cb3f03316ae8c))
+
 ## [1.0.3](https://github.com/mgd43b/shelldbhist/compare/v1.0.2...v1.0.3) (2026-07-05)
 
 
