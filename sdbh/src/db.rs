@@ -84,7 +84,13 @@ pub fn row_hash(row: &HistoryRow) -> String {
     hasher.update(&row.pwd);
     hasher.update("\n");
     hasher.update(&row.cmd);
-    format!("{:x}", hasher.finalize())
+    // sha2 0.11 returns a `hybrid_array::Array` (no `LowerHex`), so hex-encode
+    // the digest bytes ourselves. Output is byte-identical to the old `{:x}`.
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 pub fn ensure_indexes(conn: &Connection) -> Result<()> {
