@@ -9,7 +9,7 @@ use anyhow::Result;
 use clap::Parser;
 
 fn main() -> Result<()> {
-    reset_sigpipe();
+    reset_sigpipe()?;
     let cli = cli::Cli::parse();
     cli::run(cli)
 }
@@ -23,13 +23,22 @@ fn main() -> Result<()> {
 /// makes the process terminate quietly on `SIGPIPE`, matching standard Unix
 /// filters like `grep`/`cat`.
 #[cfg(unix)]
-fn reset_sigpipe() {
+fn reset_sigpipe() -> Result<()> {
     // SAFETY: called once at the very start of `main`, before any other threads
     // exist; `signal(2)` with `SIG_DFL` is async-signal-safe.
-    unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    let prev = unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
+    if prev == libc::SIG_ERR {
+        // Practically unreachable for SIGPIPE/SIG_DFL, but surface it loudly
+        // rather than silently continuing with the panic-prone SIG_IGN default.
+        return Err(anyhow::anyhow!(
+            "failed to restore default SIGPIPE handler: {}",
+            std::io::Error::last_os_error()
+        ));
     }
+    Ok(())
 }
 
 #[cfg(not(unix))]
-fn reset_sigpipe() {}
+fn reset_sigpipe() -> Result<()> {
+    Ok(())
+}

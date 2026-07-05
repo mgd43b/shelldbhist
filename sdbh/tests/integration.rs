@@ -4905,6 +4905,7 @@ required = true
 #[cfg(unix)]
 fn writing_to_closed_pipe_does_not_panic() {
     use std::io::Read;
+    use std::os::unix::process::ExitStatusExt;
     use std::process::{Command as StdCommand, Stdio};
 
     let tmp = TempDir::new().unwrap();
@@ -4954,5 +4955,16 @@ fn writing_to_closed_pipe_does_not_panic() {
     assert!(
         !stderr.contains("panicked") && !stderr.contains("Broken pipe"),
         "sdbh panicked writing to a closed pipe instead of exiting quietly:\n{stderr}"
+    );
+
+    // Guard against a hollow pass: the process must have either finished
+    // cleanly (wrote everything before the reader closed) or been terminated
+    // by SIGPIPE (signal 13, portable across Linux/macOS). A panic would exit
+    // with code 101 — signal() == None — and fail here even if stderr were
+    // somehow empty.
+    let status = output.status;
+    assert!(
+        status.success() || status.signal() == Some(13),
+        "expected a clean exit or SIGPIPE termination, got {status:?}\nstderr:\n{stderr}"
     );
 }
