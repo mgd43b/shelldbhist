@@ -41,5 +41,13 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ steps.release.outputs.tag_name || steps.release.outputs['sdbh--tag_name'] }}
         run: |
-          echo "Dispatching Release workflow for tag: $TAG_NAME"
-          gh workflow run release.yml -f tag="$TAG_NAME"
+          if [ -z "$TAG_NAME" ]; then
+            echo "::error::release was created but no tag name was resolved from release-please outputs" >&2
+            exit 1
+          fi
+          # Dispatch on the tag ref (not the default branch) so release.yml checks
+          # out and builds the exact tagged commit, even if main advances before
+          # the dispatched run starts. The tag contains release.yml, so it is a
+          # valid ref to dispatch against.
+          echo "Dispatching Release workflow on tag ref: $TAG_NAME"
+          gh workflow run release.yml --ref "$TAG_NAME" -f tag="$TAG_NAME"
