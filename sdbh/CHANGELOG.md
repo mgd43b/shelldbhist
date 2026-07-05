@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/mgd43b/shelldbhist/compare/v1.0.2...v1.0.3) (2026-07-05)
+
+
+### Bug Fixes
+
+* **db:** adapt row_hash hex encoding for sha2 0.11 ([#124](https://github.com/mgd43b/shelldbhist/issues/124)) ([fdef37d](https://github.com/mgd43b/shelldbhist/commit/fdef37d32df0dbf61a77fd61c9b2bc5d86fea33f))
+
 ## [1.0.2](https://github.com/mgd43b/shelldbhist/compare/v1.0.1...v1.0.2) (2026-02-04)
 
 
