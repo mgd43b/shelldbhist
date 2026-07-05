@@ -85,12 +85,15 @@ pub fn row_hash(row: &HistoryRow) -> String {
     hasher.update("\n");
     hasher.update(&row.cmd);
     // sha2 0.11 returns a `hybrid_array::Array` (no `LowerHex`), so hex-encode
-    // the digest bytes ourselves. Output is byte-identical to the old `{:x}`.
-    hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    // the digest bytes ourselves into a single pre-allocated String. Output is
+    // byte-identical to the old `{:x}`.
+    use std::fmt::Write as _;
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for byte in digest.iter() {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
 }
 
 pub fn ensure_indexes(conn: &Connection) -> Result<()> {
