@@ -4895,3 +4895,64 @@ required = true
         assert!(result.status.success());
     }
 }
+
+/// Regression test: writing to a closed stdout (e.g. `sdbh export | head`, or
+/// `sdbha | grep …` where grep exits early) must not panic with "failed
+/// printing to stdout: Broken pipe". `main` restores the default SIGPIPE
+/// handler so the process is terminated quietly by SIGPIPE instead. See
+/// `reset_sigpipe` in `src/main.rs`.
+#[test]
+#[cfg(unix)]
+fn writing_to_closed_pipe_does_not_panic() {
+    use std::io::Read;
+    use std::process::{Command as StdCommand, Stdio};
+
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+
+    // A single row whose command is large enough that `export` output well
+    // exceeds the OS pipe buffer, so a reader that closes early forces an
+    // EPIPE mid-write.
+    let big_cmd = format!("echo {}", "x".repeat(120_000));
+    sdbh_cmd()
+        .args([
+            "--db",
+            db.to_string_lossy().as_ref(),
+            "log",
+            "--cmd",
+            &big_cmd,
+            "--epoch",
+            "1700000000",
+            "--ppid",
+            "1",
+            "--pwd",
+            "/tmp",
+            "--salt",
+            "1",
+        ])
+        .assert()
+        .success();
+
+    let exe = assert_cmd::cargo::cargo_bin!("sdbh");
+    let mut child = StdCommand::new(exe)
+        .args(["--db", db.to_string_lossy().as_ref(), "export"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    // Read only a few bytes, then drop the read end to close the pipe while
+    // the child is still blocked writing the rest.
+    {
+        let mut out = child.stdout.take().unwrap();
+        let mut buf = [0u8; 8];
+        let _ = out.read(&mut buf);
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked") && !stderr.contains("Broken pipe"),
+        "sdbh panicked writing to a closed pipe instead of exiting quietly:\n{stderr}"
+    );
+}
