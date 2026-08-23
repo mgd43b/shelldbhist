@@ -445,3 +445,6 @@ memory-bank/
 # But keep demo.gif in root (committed for README display)
 !demo.gif
 demo
+
+# Codex local configuration
+/.codex/
