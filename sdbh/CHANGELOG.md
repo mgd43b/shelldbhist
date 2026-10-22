@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.5](https://github.com/mgd43b/shelldbhist/compare/v1.0.4...v1.0.5) (2026-10-22)
+
+
+### Miscellaneous Chores
+
+* release 1.0.5 ([#162](https://github.com/mgd43b/shelldbhist/issues/162)) ([c686280](https://github.com/mgd43b/shelldbhist/commit/c686280898d2fe300784187ce5afd7952b767564))
+
 ## [1.0.4](https://github.com/mgd43b/shelldbhist/compare/v1.0.3...v1.0.4) (2026-07-05)
 
 
