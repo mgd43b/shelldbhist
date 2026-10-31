@@ -15,7 +15,7 @@ dirs = "7.0.0"
 # instead of panicking (see `reset_sigpipe` in main.rs).
 libc = "0.2"
 regex = "1.12.3"
-rusqlite = { version = "0.40.0" }
+rusqlite = { version = "0.41.0" }
 serde = { version = "1.0.228", features = ["derive"] }
 sha2 = "0.11.0"
 terminal_size = "0.4"
