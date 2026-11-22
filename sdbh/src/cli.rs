@@ -4475,10 +4475,16 @@ fn create_template_interactive(engine: &crate::template::TemplateEngine, name: &
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    /// Serializes tests that mutate process-wide environment variables
+    /// (cargo runs tests in parallel threads within one process).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn which_plain_name_searches_path() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = TempDir::new().unwrap();
         let bin_dir = tmp.path().join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
@@ -4557,24 +4563,14 @@ mod tests {
             paths.extend(std::env::split_paths(path).map(|p| p.into_os_string()));
         }
         let new_path = std::env::join_paths(paths).unwrap();
-        unsafe {
-            std::env::set_var("PATH", &new_path);
-        }
 
         let found = find_on_path("fzf", &new_path);
         assert_eq!(found.as_ref(), Some(&bin));
-
-        unsafe {
-            if let Some(path) = original_path {
-                std::env::set_var("PATH", path);
-            } else {
-                std::env::remove_var("PATH");
-            }
-        }
     }
 
     #[test]
     fn config_path_prefers_home_env() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = TempDir::new().unwrap();
         let fake_home = tmp.path().join("home");
         std::fs::create_dir_all(&fake_home).unwrap();
