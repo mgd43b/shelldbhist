@@ -448,6 +448,7 @@ mod tests {
 
     #[test]
     fn test_template_engine_new() {
+        let _env = crate::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Test with HOME set
         unsafe { env::set_var("HOME", "/tmp") };
         let result = TemplateEngine::new();
@@ -459,6 +460,7 @@ mod tests {
 
     #[test]
     fn test_template_engine_new_no_home() {
+        let _env = crate::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Test without HOME
         unsafe {
             env::remove_var("HOME");

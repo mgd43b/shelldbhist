@@ -89,6 +89,7 @@ mod tests {
 
     #[test]
     fn test_db_config_default_path() {
+        let _env = crate::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Test with HOME set
         unsafe { env::set_var("HOME", "/home/testuser") };
         unsafe { env::remove_var("SDBH_DB") };
@@ -104,6 +105,7 @@ mod tests {
 
     #[test]
     fn test_db_config_sdbh_db_override() {
+        let _env = crate::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Test that SDBH_DB takes precedence over HOME
         unsafe { env::set_var("HOME", "/home/testuser") };
         unsafe { env::set_var("SDBH_DB", "/tmp/custom-demo.sqlite") };
@@ -117,6 +119,7 @@ mod tests {
 
     #[test]
     fn test_db_config_sdbh_db_relative_path() {
+        let _env = crate::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Test that SDBH_DB works with relative paths
         unsafe { env::set_var("HOME", "/home/testuser") };
         unsafe { env::set_var("SDBH_DB", "demo/test.sqlite") };
