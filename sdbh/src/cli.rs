@@ -4475,12 +4475,8 @@ fn create_template_interactive(engine: &crate::template::TemplateEngine, name: &
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
+    use crate::ENV_LOCK;
     use tempfile::TempDir;
-
-    /// Serializes tests that mutate process-wide environment variables
-    /// (cargo runs tests in parallel threads within one process).
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn which_plain_name_searches_path() {

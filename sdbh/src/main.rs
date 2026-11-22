@@ -5,6 +5,11 @@ mod db;
 mod domain;
 mod template;
 
+/// Serializes tests that mutate process-wide environment variables
+/// (cargo runs tests in parallel threads within one process).
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 use anyhow::Result;
 use clap::Parser;
 
